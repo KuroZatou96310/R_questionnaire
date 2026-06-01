@@ -1,0 +1,68 @@
+FROM --platform=linux/amd64 ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 基本ツール
+RUN apt update && \
+    apt install -y --no-install-recommends \
+    openssh-server \
+    wget \
+    curl \
+    gnupg \
+    ca-certificates \
+    software-properties-common \
+    dirmngr \
+    gdebi-core
+
+# CRAN key 登録
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
+    | gpg --dearmor -o /etc/apt/keyrings/cran.gpg
+
+RUN echo "deb [signed-by=/etc/apt/keyrings/cran.gpg] https://cloud.r-project.org/bin/linux/ubuntu noble-cran40/" \
+    > /etc/apt/sources.list.d/cran-r.list
+# R install
+RUN apt update && \
+    apt install -y --no-install-recommends \
+    r-base \
+    r-base-dev
+
+# Shiny 用ライブラリ
+RUN apt install -y --no-install-recommends \
+    libfreetype-dev \
+    libfontconfig1-dev \
+    libcairo2-dev \
+    libharfbuzz-dev \
+    libfribidi-dev\
+    libtiff5-dev \
+    libuv1-dev
+
+# R packages
+RUN R -e "install.packages('shiny', repos='https://cran.rstudio.com/')"
+
+RUN R -e "install.packages('rmarkdown', repos='https://cran.rstudio.com/')"
+
+
+#Rの使うライブラリあったらここ入れといて
+RUN R -q -e "install.packages(c('jsonlite','uuid','digest', 'DBI', 'RSQLite'), repos='https://cloud.r-project.org')"
+
+# Shiny Server install
+RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb \
+    https://download3.rstudio.org/ubuntu-20.04/x86_64/shiny-server-1.5.23.1030-amd64.deb && \
+    gdebi -n shiny-server-1.5.23.1030-amd64.deb
+
+# app 配置
+#COPY shinyApp/ /srv/shiny-server/
+
+# port
+EXPOSE 3838
+
+# 起動
+CMD ["/usr/bin/shiny-server"]
+
+
+
+
+#docker build -t shiny-server .\
+#docker run -d -p 3838:3838 --name aaaaaaa shiny-server
+#Ctrl + Shift + P -> Remote-Containers: Attach to Running Container... -> aaaaaaaみたいな感じ
