@@ -53,6 +53,13 @@ RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb 
 
 # app 配置
 #COPY shinyApp/ /srv/shiny-server/
+# 所有権をshinyに統一
+
+RUN chown -R shiny:shiny /srv/shiny-server
+
+# グループ継承 + 書き込み許可
+
+RUN chmod -R 2775 /srv/shiny-server
 
 # port
 EXPOSE 3838
