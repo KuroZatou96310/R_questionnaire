@@ -57,9 +57,9 @@ RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb 
 
 RUN chown -R shiny:shiny /srv/shiny-server
 
-# グループ継承 + 書き込み許可
-
-RUN chmod -R 2775 /srv/shiny-server
+## データ保存用ディレクトリ作成
+RUN mkdir /srv/shiny-server/enquete_app_data
+RUN chown shiny:shiny /srv/shiny-server/enquete_app_data
 
 # port
 EXPOSE 3838
