@@ -8,7 +8,7 @@ library(RSQLite)
 # DB設定
 # =========================
 
-DATA_DIR <- "/srv/shiny-server/enquete_app_data"
+DATA_DIR <- "/srv/shiny-server/data"
 DB_FILE <- file.path(
   DATA_DIR,
   "questionnaire.db"

@@ -12,7 +12,8 @@ RUN apt update && \
     ca-certificates \
     software-properties-common \
     dirmngr \
-    gdebi-core
+    gdebi-core \
+    git
 
 # CRAN key 登録
 RUN mkdir -p /etc/apt/keyrings && \
@@ -60,6 +61,13 @@ RUN chown -R shiny:shiny /srv/shiny-server
 ## データ保存用ディレクトリ作成
 RUN mkdir /srv/shiny-server/enquete_app_data
 RUN chown shiny:shiny /srv/shiny-server/enquete_app_data
+RUN git clone --depth 1 \
+    https://github.com/KuroZatou96310/R_questionnaire.git \
+    /srv/shiny-server
+
+RUN cp \
+    /srv/shiny-server/shiny-server.conf \
+    /etc/shiny-server/shiny-server.conf
 
 # port
 EXPOSE 3838
