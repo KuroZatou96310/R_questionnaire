@@ -42,8 +42,6 @@ RUN apt install -y --no-install-recommends \
 RUN R -e "install.packages('shiny', repos='https://cran.rstudio.com/')"
 
 RUN R -e "install.packages('rmarkdown', repos='https://cran.rstudio.com/')"
-
-
 #Rの使うライブラリあったらここ入れといて
 RUN R -q -e "install.packages(c('jsonlite','uuid','digest', 'DBI', 'RSQLite'), repos='https://cloud.r-project.org')"
 
@@ -56,15 +54,17 @@ RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb 
 #COPY shinyApp/ /srv/shiny-server/
 # 所有権をshinyに統一
 
-RUN chown -R shiny:shiny /srv/shiny-server
+
 
 ## データ保存用ディレクトリ作成
-RUN mkdir /srv/shiny-server/enquete_app_data
-RUN chown shiny:shiny /srv/shiny-server/enquete_app_data
+
+RUN rm -rf /srv/shiny-server/*
+
 RUN git clone --depth 1 \
     https://github.com/KuroZatou96310/R_questionnaire.git \
     /srv/shiny-server
-
+RUN chown -R shiny:shiny /srv/shiny-server
+RUN chown shiny:shiny /srv/shiny-server/enquete_app_data
 RUN cp \
     /srv/shiny-server/shiny-server.conf \
     /etc/shiny-server/shiny-server.conf
