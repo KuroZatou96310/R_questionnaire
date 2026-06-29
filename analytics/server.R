@@ -28,7 +28,7 @@ shinyServer(function(input, output, session){
     }
 
     if(db[[input$survey_id]]$password !=
-       hash_pw(input$survey_pw)){
+      hash_pw(input$survey_pw)){
 
       showNotification(
         "パスワードが違います",
