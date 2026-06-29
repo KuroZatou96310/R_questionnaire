@@ -28,15 +28,8 @@ init_db <- function() {
     )
   }
 
-  con <- dbConnect(
-    SQLite(),
-    DB_FILE
-  )
-
-  on.exit(
-    dbDisconnect(con),
-    add = TRUE
-  )
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
 
   # surveys
   dbExecute(con, "
@@ -92,80 +85,56 @@ init_db <- function() {
 }
 
 # =========================
-# パスワードハッシュ
+# ハッシュ
 # =========================
 
 hash_pw <- function(pw) {
-  digest(
-    pw,
-    algo = "sha256",
-    serialize = FALSE
-  )
+  digest(pw, algo = "sha256", serialize = FALSE)
 }
 
 # =========================
-# アンケート一覧取得
+# アンケート一覧
 # =========================
 
 load_db <- function() {
 
   init_db()
 
-  con <- dbConnect(
-    SQLite(),
-    DB_FILE
-  )
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
 
-  on.exit(
-    dbDisconnect(con),
-    add = TRUE
-  )
-
-  surveys <- dbReadTable(
-    con,
-    "surveys"
-  )
+  surveys <- dbReadTable(con, "surveys")
 
   if (nrow(surveys) == 0) {
     return(list())
   }
 
-  result <- list()
+  res <- list()
 
   for (i in seq_len(nrow(surveys))) {
 
     row <- surveys[i, ]
 
-    result[[row$survey_id]] <- list(
+    res[[row$survey_id]] <- list(
       password = row$password_hash,
-      created = row$created_at,
-      qcount = NA_integer_
+      created  = row$created_at,
+      qcount   = NA_integer_
     )
-
   }
 
-  result
+  res
 }
 
 # =========================
 # 質問読み込み
 # =========================
 
-load_questions <- function(
-  survey_id
-) {
+load_questions <- function(survey_id) {
 
   init_db()
 
-  con <- dbConnect(
-    SQLite(),
-    DB_FILE
-  )
-
-  on.exit(
-    dbDisconnect(con),
-    add = TRUE
-  )
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
 
   qs_df <- dbGetQuery(
     con,
@@ -175,14 +144,14 @@ load_questions <- function(
       WHERE survey_id = ?
       ORDER BY order_index
     ",
-    list(survey_id)
+    params = list(survey_id)
   )
 
   if (nrow(qs_df) == 0) {
     return(list())
   }
 
-  questions <- list()
+  qs <- list()
 
   for (i in seq_len(nrow(qs_df))) {
 
@@ -190,215 +159,43 @@ load_questions <- function(
 
     options <- NULL
 
-    if (
-      !is.na(row$options_json) &&
-      nzchar(row$options_json)
-    ) {
-      options <- fromJSON(
-        row$options_json,
-        simplifyVector = FALSE
-      )
+    if (!is.na(row$options_json) && nzchar(row$options_json)) {
+      options <- fromJSON(row$options_json)
     }
 
-    questions[[row$question_id]] <- list(
-      id = row$question_id,
-      title = row$title,
-      desc = row$description,
-      type = row$type,
+    qs[[row$question_id]] <- list(
+      id      = row$question_id,
+      title   = row$title,
+      desc    = row$description,
+      type    = row$type,
       options = options,
-      min = if (is.na(row$min_value))
-        NULL else row$min_value,
-      max = if (is.na(row$max_value))
-        NULL else row$max_value
+      min     = if (is.na(row$min_value)) NULL else row$min_value,
+      max     = if (is.na(row$max_value)) NULL else row$max_value
     )
   }
 
-  questions
-}
-
-# =========================
-# アンケート保存
-# =========================
-
-save_db <- function(
-  survey_id,
-  password_hash,
-  questions_list,
-  question_ids
-) {
-
-  init_db()
-
-  con <- dbConnect(
-    SQLite(),
-    DB_FILE
-  )
-
-  on.exit(
-    dbDisconnect(con),
-    add = TRUE
-  )
-
-  created_at <- as.character(
-    Sys.time()
-  )
-
-  existing <- dbGetQuery(
-    con,
-    "
-      SELECT COUNT(*) AS cnt
-      FROM surveys
-      WHERE survey_id = ?
-    ",
-    list(survey_id)
-  )
-
-  if (existing$cnt > 0) {
-
-    dbExecute(
-      con,
-      "
-      DELETE FROM questions
-      WHERE survey_id = ?
-      ",
-      list(survey_id)
-    )
-
-    dbExecute(
-      con,
-      "
-      UPDATE surveys
-      SET password_hash = ?,
-          updated_at = ?
-      WHERE survey_id = ?
-      ",
-      list(
-        password_hash,
-        created_at,
-        survey_id
-      )
-    )
-
-  } else {
-
-    dbExecute(
-      con,
-      "
-      INSERT INTO surveys
-      (
-        survey_id,
-        password_hash,
-        created_at,
-        updated_at
-      )
-      VALUES
-      (
-        ?, ?, ?, ?
-      )
-      ",
-      list(
-        survey_id,
-        password_hash,
-        created_at,
-        created_at
-      )
-    )
-
-  }
-
-  for (i in seq_along(question_ids)) {
-
-    qid <- question_ids[i]
-    q <- questions_list[[qid]]
-
-    options_json <- if (
-      is.null(q$options) ||
-      length(q$options) == 0
-    ) {
-      NA_character_
-    } else {
-      toJSON(
-        q$options,
-        auto_unbox = TRUE
-      )
-    }
-
-    dbExecute(
-      con,
-      "
-      INSERT INTO questions
-      (
-        question_id,
-        survey_id,
-        title,
-        description,
-        type,
-        order_index,
-        options_json,
-        min_value,
-        max_value
-      )
-      VALUES
-      (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?
-      )
-      ",
-      list(
-        qid,
-        survey_id,
-        q$title,
-        q$desc,
-        q$type,
-        i - 1,
-        options_json,
-        if (is.null(q$min))
-          NA_real_ else q$min,
-        if (is.null(q$max))
-          NA_real_ else q$max
-      )
-    )
-
-  }
-
-  TRUE
+  qs
 }
 
 # =========================
 # 回答保存
 # =========================
 
-save_response <- function(
-  survey_id,
-  answers
-) {
+save_response <- function(survey_id, answers) {
 
   init_db()
 
-  con <- dbConnect(
-    SQLite(),
-    DB_FILE
-  )
-
-  on.exit(
-    dbDisconnect(con),
-    add = TRUE
-  )
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
 
   response_id <- UUIDgenerate()
 
   dbExecute(
     con,
     "
-    INSERT INTO responses
-    (
-      response_id,
-      survey_id,
-      submitted_at
-    )
-    VALUES
-    (
-      ?, ?, ?
-    )
+      INSERT INTO responses
+      (response_id, survey_id, submitted_at)
+      VALUES (?, ?, ?)
     ",
     list(
       response_id,
@@ -409,35 +206,24 @@ save_response <- function(
 
   for (qid in names(answers)) {
 
-    answer_value <- answers[[qid]]
+    val <- answers[[qid]]
 
-    if (length(answer_value) > 1) {
-      answer_value <- paste(
-        answer_value,
-        collapse = ","
-      )
+    if (length(val) > 1) {
+      val <- paste(val, collapse = ",")
     }
 
     dbExecute(
       con,
       "
-      INSERT INTO answers
-      (
-        answer_id,
-        response_id,
-        question_id,
-        answer_text
-      )
-      VALUES
-      (
-        ?, ?, ?, ?
-      )
+        INSERT INTO answers
+        (answer_id, response_id, question_id, answer_text)
+        VALUES (?, ?, ?, ?)
       ",
       list(
         UUIDgenerate(),
         response_id,
         qid,
-        as.character(answer_value)
+        as.character(val)
       )
     )
   }
@@ -446,39 +232,54 @@ save_response <- function(
 }
 
 # =========================
+# ★分析用：回答取得（追加部分）
+# =========================
+
+load_answers <- function(survey_id) {
+
+  init_db()
+
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
+
+  dbGetQuery(
+    con,
+    "
+      SELECT
+        r.response_id,
+        r.submitted_at,
+        a.question_id,
+        a.answer_text
+      FROM responses r
+      JOIN answers a
+        ON r.response_id = a.response_id
+      WHERE r.survey_id = ?
+      ORDER BY r.submitted_at
+    ",
+    params = list(survey_id)
+  )
+}
+
+# =========================
 # 正規化
 # =========================
 
-normalize_questions <- function(
-  qlist
-) {
+normalize_questions <- function(qlist) {
 
-  lapply(
-    qlist,
-    function(q) {
+  lapply(qlist, function(q) {
 
-      if (
-        !is.null(q$options) &&
-        length(q$options) == 0
-      ) {
-        q$options <- NULL
-      }
-
-      if (
-        !is.null(q$min) &&
-        length(q$min) == 0
-      ) {
-        q$min <- NULL
-      }
-
-      if (
-        !is.null(q$max) &&
-        length(q$max) == 0
-      ) {
-        q$max <- NULL
-      }
-
-      q
+    if (!is.null(q$options) && length(q$options) == 0) {
+      q$options <- NULL
     }
-  )
+
+    if (!is.null(q$min) && length(q$min) == 0) {
+      q$min <- NULL
+    }
+
+    if (!is.null(q$max) && length(q$max) == 0) {
+      q$max <- NULL
+    }
+
+    q
+  })
 }

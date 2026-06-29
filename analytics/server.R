@@ -136,6 +136,7 @@ shinyServer(function(input, output, session){
 
         output[[paste0("plot_",qid)]] <- renderPlot({
 
+
           d <- subset(
             ans,
             question_id == qid
