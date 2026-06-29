@@ -57,14 +57,16 @@ RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb 
 
 
 ## データ保存用ディレクトリ作成
-
 RUN rm -rf /srv/shiny-server/*
 
 RUN git clone --depth 1 \
     https://github.com/KuroZatou96310/R_questionnaire.git \
     /srv/shiny-server
-RUN chown -R shiny:shiny /srv/shiny-server
-RUN chown shiny:shiny /srv/shiny-server/enquete_app_data
+
+# データベース用ディレクトリ作成と権限付与
+RUN mkdir /srv/shiny-server/data
+RUN chown shiny:shiny /srv/shiny-server/data
+
 RUN cp \
     /srv/shiny-server/shiny-server.conf \
     /etc/shiny-server/shiny-server.conf

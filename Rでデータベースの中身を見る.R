@@ -28,9 +28,6 @@ dbGetQuery(con, "SELECT * FROM answers LIMIT 10")
 dbGetQuery(con, "PRAGMA table_info(answers)")
 
 
-● Webサイトから送信された回答が、データベースへ正常に保存されることを確認した。
-
-
 
 
 
