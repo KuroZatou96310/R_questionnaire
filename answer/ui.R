@@ -1,10 +1,10 @@
 library(shiny)
-
+library(bslib)
 shinyUI(
-  fluidPage(
+  page_fillable(
 
-    titlePanel("アンケート回答"),
-
+    uiOutput("question_ui")
+,
     sidebarLayout(
 
       sidebarPanel(
@@ -23,7 +23,6 @@ shinyUI(
 
       mainPanel(
 
-        uiOutput("question_ui"),
 
         br(),
 

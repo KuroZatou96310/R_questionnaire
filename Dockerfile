@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM --platform=linux/amd64 ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -20,7 +20,7 @@ RUN mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
     | gpg --dearmor -o /etc/apt/keyrings/cran.gpg
 
-RUN echo "deb [signed-by=/etc/apt/keyrings/cran.gpg] https://cloud.r-project.org/bin/linux/ubuntu noble-cran40/" \
+RUN echo "deb [signed-by=/etc/apt/keyrings/cran.gpg] https://cloud.r-project.org/bin/linux/ubuntu resolute-cran40/" \
     > /etc/apt/sources.list.d/cran-r.list
 # R install
 RUN apt update && \
@@ -38,12 +38,9 @@ RUN apt install -y --no-install-recommends \
     libtiff5-dev \
     libuv1-dev
 
-# R packages
-RUN R -e "install.packages('shiny', repos='https://cran.rstudio.com/')"
 
-RUN R -e "install.packages('rmarkdown', repos='https://cran.rstudio.com/')"
 #Rの使うライブラリあったらここ入れといて
-RUN R -q -e "install.packages(c('jsonlite','uuid','digest', 'DBI', 'RSQLite'), repos='https://cloud.r-project.org')"
+RUN R -q -e "install.packages(c('qrencoder','shiny','rmarkdown','jsonlite','uuid','digest', 'DBI', 'RSQLite','bslib'), repos='https://cloud.r-project.org')"
 
 # Shiny Server install
 RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb \

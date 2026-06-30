@@ -1,11 +1,25 @@
 library(shiny)
+library(bslib)
 
 source("db.R")
 
 shinyServer(function(input, output, session){
 
-  survey_questions <- reactiveVal(NULL)
+  survey_questions <-reactiveVal(NULL)
+observeEvent(session, {
 
+  query <- getQueryString()
+  if (is.null(query$id)) return()
+
+  updateTextInput(session, "survey_id", value = query$id)
+
+  data <- load_questions(query$id)
+  if (length(data) > 0) {
+    survey_questions(data)
+  }
+
+})
+ 
   observeEvent(input$load, {
 
     req(input$survey_id)
@@ -25,86 +39,58 @@ shinyServer(function(input, output, session){
     }
 
     survey_questions(qs)
+    
+    
 
   })
 
-  output$question_ui <- renderUI({
-
+    output$question_ui <- renderUI({
     qs <- survey_questions()
-
     req(qs)
 
-    tagList(
+      card(
+        card_header(
+          input$survey_id
+        ),
+        card_body(
+          tagList(
+            lapply(qs, function(q){
 
-      lapply(qs,function(q){
+              label <- tagList(
+                strong(q$title),
+                br(),
+                q$desc
+              )
 
-        label <- tagList(
-          strong(q$title),
-          br(),
-          q$desc
+              opts <- unlist(q$options)
+              card(
+                card_header(
+                  q$title
+                ),
+                card_body(
+                  q$desc,
+                ),
+                card_footer(
+                  switch(
+                    q$type,
+                    "single"   = radioButtons(q$id, NULL, choices = opts),
+                    "multiple" = checkboxGroupInput(q$id, NULL, choices = opts),
+                    "select"   = selectInput(q$id, NULL, choices = opts),
+                    "numeric"  = numericInput(q$id, NULL, value = NA),
+                    "text"     = textAreaInput(q$id, NULL),
+                    "slider"   = sliderInput(q$id, NULL, min = q$min, max = q$max, value = q$min),
+                    "date"     = dateInput(q$id, NULL)
+                  )
+                )
+              )
+
+            })
+          )
         )
+      )
 
-        opts <- unlist(q$options)
 
-        switch(
-
-          q$type,
-
-          "single" =
-            radioButtons(
-              q$id,
-              label,
-              choices=opts
-            ),
-
-          "multiple" =
-            checkboxGroupInput(
-              q$id,
-              label,
-              choices=opts
-            ),
-
-          "select" =
-            selectInput(
-              q$id,
-              label,
-              choices=opts
-            ),
-
-          "numeric" =
-            numericInput(
-              q$id,
-              label,
-              value=NA
-            ),
-
-          "text" =
-            textAreaInput(
-              q$id,
-              label
-            ),
-
-          "slider" =
-            sliderInput(
-              q$id,
-              label,
-              min=q$min,
-              max=q$max,
-              value=q$min
-            ),
-
-          "date" =
-            dateInput(
-              q$id,
-              label
-            )
-
-        )
-
-      })
-
-    )
-
+    
   })
 
   observeEvent(input$submit, {
