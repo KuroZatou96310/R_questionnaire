@@ -1,7 +1,7 @@
 library(shiny)
 library(bslib)
 shinyUI(
-  page_fillable(
+  page_fluid(
 
     uiOutput("question_ui")
 ,

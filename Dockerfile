@@ -40,7 +40,7 @@ RUN apt install -y --no-install-recommends \
 
 
 #Rの使うライブラリあったらここ入れといて
-RUN R -q -e "install.packages(c('qrencoder','shiny','rmarkdown','jsonlite','uuid','digest', 'DBI', 'RSQLite','bslib'), repos='https://cloud.r-project.org')"
+RUN Rscript -e "install.packages(c('qrencoder','shiny','rmarkdown','jsonlite','uuid','digest', 'DBI', 'RSQLite','bslib'), repos='https://cloud.r-project.org')"
 
 # Shiny Server install
 RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb \
@@ -79,4 +79,4 @@ CMD ["/usr/bin/shiny-server"]
 
 #docker build -t shiny-server .\
 #docker run -d -p 3838:3838 --name aaaaaaa shiny-server
-#Ctrl + Shift + P -> Remote-Containers: Attach to Running Container... -> aaaaaaaみたいな感じ
+#Ctrl + Shift + P -> Dev Containers: Attach to Running Container... -> aaaaaaaみたいな感じ
