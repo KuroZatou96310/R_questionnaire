@@ -332,7 +332,7 @@ shinyServer(function(input, output, session){
 
               data.frame(
 
-                項目=c(
+                key=c(
                   "平均",
                   "中央値",
                   "最小",
@@ -340,7 +340,7 @@ shinyServer(function(input, output, session){
                   "標準偏差"
                 ),
 
-                値=c(
+                value=c(
                   mean(x,na.rm=TRUE),
                   median(x,na.rm=TRUE),
                   min(x,na.rm=TRUE),
@@ -360,7 +360,7 @@ shinyServer(function(input, output, session){
 
               data.frame(
 
-                項目=c(
+                key=c(
                   "平均",
                   "中央値",
                   "最小",
@@ -368,7 +368,7 @@ shinyServer(function(input, output, session){
                   "標準偏差"
                 ),
 
-                値=c(
+                value=c(
                   mean(x,na.rm=TRUE),
                   median(x,na.rm=TRUE),
                   min(x,na.rm=TRUE),
@@ -399,7 +399,7 @@ shinyServer(function(input, output, session){
 
               data.frame(
 
-                回答=d$answer_text,
+                answer_text_=d$answer_text,
 
                 stringsAsFactors=FALSE
 
