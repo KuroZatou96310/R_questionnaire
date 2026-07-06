@@ -1,4 +1,12 @@
 library(shiny)
+library(showtext)
+
+font_add(
+  "jp",
+  "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc"
+)
+showtext_auto()
+
 
 source("db.R")
 
@@ -6,6 +14,7 @@ shinyServer(function(input, output, session){
 
   survey_questions <- reactiveVal(NULL)
   survey_answers   <- reactiveVal(NULL)
+
 
   #-------------------------
   # アンケート読込
@@ -135,6 +144,8 @@ shinyServer(function(input, output, session){
         #---------------------
 
         output[[paste0("plot_",qid)]] <- renderPlot({
+
+          par(family = "jp")
 
 
           d <- subset(
