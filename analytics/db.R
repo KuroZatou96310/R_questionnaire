@@ -1,4 +1,3 @@
-library(jsonlite)
 library(uuid)
 library(digest)
 library(DBI)
@@ -8,6 +7,7 @@ library(RSQLite)
 # DB設定
 # =========================
 
+# コンテナ内では回答アプリと同じ永続データ領域を使う
 DATA_DIR <- "/srv/shiny-server/data"
 DB_FILE <- file.path(
   DATA_DIR,
@@ -157,10 +157,13 @@ load_questions <- function(survey_id) {
 
     row <- qs_df[i, ]
 
+    row$title <- enc2utf8(as.character(row$title))
+    row$description <- enc2utf8(as.character(row$description))
+
     options <- NULL
 
     if (!is.na(row$options_json) && nzchar(row$options_json)) {
-      options <- fromJSON(row$options_json)
+      options <- enc2utf8(as.character(jsonlite::fromJSON(enc2utf8(row$options_json))))
     }
 
     qs[[row$question_id]] <- list(
@@ -242,7 +245,7 @@ load_answers <- function(survey_id) {
   con <- dbConnect(SQLite(), DB_FILE)
   on.exit(dbDisconnect(con), add = TRUE)
 
-  dbGetQuery(
+  answers <- dbGetQuery(
     con,
     "
       SELECT
@@ -258,6 +261,9 @@ load_answers <- function(survey_id) {
     ",
     params = list(survey_id)
   )
+
+  answers$answer_text <- enc2utf8(as.character(answers$answer_text))
+  answers
 }
 
 # =========================
