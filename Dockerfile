@@ -40,6 +40,8 @@ RUN apt install -y --no-install-recommends \
     libtiff5-dev \
     libuv1-dev
 
+# 日本語用フォント
+RUN apt-get install -y fonts-noto-cjk
 
 #Rの使うライブラリあったらここ入れといて
 RUN Rscript -e "install.packages(c('qrencoder','shiny','rmarkdown','jsonlite','uuid','digest', 'DBI', 'RSQLite','bslib','showtext','ggplot2'), repos='https://cloud.r-project.org')"
@@ -80,5 +82,5 @@ CMD ["/usr/bin/shiny-server"]
 
 
 #docker build -t shiny-server .\
-#docker run -d -p 3838:3838 --name aaaaaaa shiny-server
+#docker run -d -p 3838:3838 --name aa22222 shiny-server
 #Ctrl + Shift + P -> Dev Containers: Attach to Running Container... -> aaaaaaaみたいな感じ
