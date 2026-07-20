@@ -1,10 +1,37 @@
 library(shiny)
 library(showtext)
+library(ggplot2)
 
 # Shiny Server の既定ロケールが C の場合でも、日本語をUTF-8として表示する
 try(Sys.setlocale("LC_CTYPE", "C.UTF-8"), silent = TRUE)
+font_add("jp", "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc")
+showtext_auto()
 
 source("db.R")
+
+analysis_theme <- function() {
+  theme_minimal(base_family = "jp", base_size = 13) +
+    theme(
+      plot.title = element_text(face = "bold", margin = margin(b = 14)),
+      axis.title = element_text(face = "bold"),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+}
+
+frequency_plot <- function(values, title, fill = "#2C7FB8") {
+  counts <- as.data.frame(table(values), stringsAsFactors = FALSE)
+  names(counts) <- c("answer", "count")
+  counts <- counts[counts$answer != "" & !is.na(counts$answer), , drop = FALSE]
+
+  ggplot(counts, aes(x = reorder(answer, count), y = count)) +
+    geom_col(fill = fill, width = 0.68) +
+    geom_text(aes(label = count), hjust = -0.2, family = "jp") +
+    coord_flip(clip = "off") +
+    labs(title = title, x = NULL, y = "回答数") +
+    expand_limits(y = max(counts$count, 0) * 1.15) +
+    analysis_theme()
+}
 
 shinyServer(function(input, output, session){
 
@@ -144,7 +171,14 @@ shinyServer(function(input, output, session){
 
     tagList(
       selectInput("cross_row", "行にする設問", choices = choices, selected = ids[1]),
-      selectInput("cross_col", "列にする設問", choices = choices, selected = ids[2])
+      selectInput("cross_col", "列にする設問", choices = choices, selected = ids[2]),
+      radioButtons(
+        "cross_display",
+        "表示方法",
+        choices = c("件数" = "count", "構成比（％）" = "percent"),
+        selected = "count",
+        inline = TRUE
+      )
     )
 
   })
@@ -198,6 +232,21 @@ shinyServer(function(input, output, session){
 
   }
 
+  question_categories <- function(question, observed_answers) {
+
+    configured <- character()
+
+    if (!is.null(question$options)) {
+      configured <- enc2utf8(as.character(unlist(question$options, use.names = FALSE)))
+    }
+
+    observed <- enc2utf8(as.character(observed_answers))
+    observed <- observed[!is.na(observed) & nzchar(trimws(observed))]
+
+    unique(c(configured, observed))
+
+  }
+
   crosstab_data <- reactive({
 
     req(survey_answers(), survey_questions(), input$cross_row, input$cross_col)
@@ -230,7 +279,15 @@ shinyServer(function(input, output, session){
     row_data <- expand_categorical_answers(row_data, qs[[input$cross_row]]$type)
     col_data <- expand_categorical_answers(col_data, qs[[input$cross_col]]$type)
 
+    row_categories <- question_categories(qs[[input$cross_row]], row_data$answer_text)
+    col_categories <- question_categories(qs[[input$cross_col]], col_data$answer_text)
+
     result <- merge(row_data, col_data, by = "response_id", suffixes = c("_row", "_col"))
+
+    attr(result, "row_title") <- qs[[input$cross_row]]$title
+    attr(result, "col_title") <- qs[[input$cross_col]]$title
+    attr(result, "row_categories") <- row_categories
+    attr(result, "col_categories") <- col_categories
 
     if (nrow(result) == 0) {
       attr(result, "message") <- "両方の設問に回答した人がいません。"
@@ -251,9 +308,54 @@ shinyServer(function(input, output, session){
       return(result)
     }
 
-    as.data.frame.matrix(table(d$answer_text_row, d$answer_text_col))
+    counts <- table(
+      factor(d$answer_text_row, levels = attr(d, "row_categories")),
+      factor(d$answer_text_col, levels = attr(d, "col_categories"))
+    )
 
-  }, rownames = TRUE)
+    if (identical(input$cross_display, "percent")) {
+      total <- sum(counts)
+      values <- counts / total * 100
+      values <- matrix(
+        paste0(format(round(values, 1), nsmall = 1, trim = TRUE), "%"),
+        nrow = nrow(counts),
+        dimnames = dimnames(counts)
+      )
+      row_totals <- paste0(format(round(rowSums(counts) / total * 100, 1), nsmall = 1, trim = TRUE), "%")
+      col_totals <- paste0(format(round(colSums(counts) / total * 100, 1), nsmall = 1, trim = TRUE), "%")
+      grand_total <- "100.0%"
+    } else {
+      values <- counts
+      row_totals <- rowSums(counts)
+      col_totals <- colSums(counts)
+      grand_total <- sum(counts)
+    }
+
+    values <- cbind(values, "合計" = row_totals)
+    values <- rbind(values, "合計" = c(col_totals, grand_total))
+
+    result <- data.frame(
+      row_label = rownames(values),
+      values,
+      check.names = FALSE,
+      stringsAsFactors = FALSE
+    )
+    names(result)[1] <- paste0(
+      attr(d, "row_title"),
+      "＼",
+      attr(d, "col_title")
+    )
+    result
+
+  }, rownames = FALSE)
+
+  output$crosstab_heading <- renderText({
+    if (identical(input$cross_display, "percent")) {
+      "クロス集計表（構成比）"
+    } else {
+      "クロス集計表（件数）"
+    }
+  })
 
   output$crosstab_note <- renderText({
 
@@ -261,7 +363,11 @@ shinyServer(function(input, output, session){
     message <- attr(d, "message")
     if (!is.null(message)) return(message)
 
-    paste0("両方の設問に回答した ", length(unique(d$response_id)), " 人を集計しています。複数選択式は選択肢ごとに集計されます。")
+    paste0(
+      "行：", attr(d, "row_title"), " ＼ 列：", attr(d, "col_title"),
+      "。両方の設問に回答した ", length(unique(d$response_id)),
+      " 人を集計しています。複数選択式は選択肢ごとに集計されます。"
+    )
 
   })
 
@@ -344,17 +450,21 @@ shinyServer(function(input, output, session){
     }
 
     qs <- survey_questions()
-    plot(d$x, d$y,
-      xlab = qs[[input$numeric_x]]$title,
-      ylab = qs[[input$numeric_y]]$title,
-      main = "数値同士の関係",
-      pch = 19,
-      col = rgb(0.15, 0.45, 0.75, 0.65)
-    )
+    plot_data <- data.frame(x = d$x, y = d$y)
+    p <- ggplot(plot_data, aes(x = x, y = y)) +
+      geom_point(size = 3, alpha = 0.72, color = "#2C7FB8") +
+      labs(
+        title = "数値同士の関係",
+        x = qs[[input$numeric_x]]$title,
+        y = qs[[input$numeric_y]]$title
+      ) +
+      analysis_theme()
 
     if (nrow(d) >= 2 && length(unique(d$x)) > 1) {
-      abline(lm(y ~ x, data = d), col = "tomato", lwd = 2)
+      p <- p + geom_smooth(method = "lm", se = TRUE, color = "#D95F0E", fill = "#FDD49E")
     }
+
+    print(p)
 
   })
 
@@ -414,9 +524,6 @@ shinyServer(function(input, output, session){
 
         output[[paste0("plot_",qid)]] <- renderPlot({
 
-          par(family = "jp")
-
-
           d <- subset(
             ans,
             question_id == qid
@@ -441,28 +548,12 @@ shinyServer(function(input, output, session){
             q$type,
 
             single = {
-
-              tb <- table(d$answer_text)
-
-              barplot(
-                tb,
-                col="skyblue",
-                las=2,
-                main=q$title
-              )
+              print(frequency_plot(d$answer_text, q$title))
 
             },
 
             select = {
-
-              tb <- table(d$answer_text)
-
-              barplot(
-                tb,
-                col="skyblue",
-                las=2,
-                main=q$title
-              )
+              print(frequency_plot(d$answer_text, q$title))
 
             },
 
@@ -475,49 +566,37 @@ shinyServer(function(input, output, session){
                 )
               )
 
-              tb <- table(trimws(x))
-
-              barplot(
-                tb,
-                col="orange",
-                las=2,
-                main=q$title
-              )
+              print(frequency_plot(trimws(x), q$title, "#F28E2B"))
 
             },
 
             numeric = {
 
-              hist(
-                as.numeric(d$answer_text),
-                main=q$title,
-                col="lightgreen",
-                xlab=""
+              values <- suppressWarnings(as.numeric(d$answer_text))
+              print(
+                ggplot(data.frame(value = values), aes(x = value)) +
+                  geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
+                  labs(title = q$title, x = "値", y = "回答数") +
+                  analysis_theme()
               )
 
             },
 
             slider = {
 
-              hist(
-                as.numeric(d$answer_text),
-                main=q$title,
-                col="lightgreen",
-                xlab=""
+              values <- suppressWarnings(as.numeric(d$answer_text))
+              print(
+                ggplot(data.frame(value = values), aes(x = value)) +
+                  geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
+                  labs(title = q$title, x = "値", y = "回答数") +
+                  analysis_theme()
               )
 
             },
 
             date = {
 
-              tb <- table(d$answer_text)
-
-              barplot(
-                tb,
-                las=2,
-                col="pink",
-                main=q$title
-              )
+              print(frequency_plot(d$answer_text, q$title, "#AF7AA1"))
 
             },
 
@@ -730,3 +809,5 @@ shinyServer(function(input, output, session){
   )
 
 })
+
+

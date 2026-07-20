@@ -63,7 +63,7 @@ shinyUI(
             br(),
             uiOutput("crosstab_ui"),
             hr(),
-            h4("クロス集計表（件数）"),
+            h4(textOutput("crosstab_heading", inline = TRUE)),
             tableOutput("crosstab_table"),
             br(),
             textOutput("crosstab_note")
