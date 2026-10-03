@@ -297,6 +297,21 @@ shinyServer(function(input, output, session){
 
   })
 
+  crosstab_counts <- reactive({
+
+    d <- crosstab_data()
+
+    if (!is.null(attr(d, "message"))) {
+      return(NULL)
+    }
+
+    table(
+      factor(d$answer_text_row, levels = attr(d, "row_categories")),
+      factor(d$answer_text_col, levels = attr(d, "col_categories"))
+    )
+
+  })
+
   output$crosstab_table <- renderTable({
 
     d <- crosstab_data()
@@ -308,10 +323,7 @@ shinyServer(function(input, output, session){
       return(result)
     }
 
-    counts <- table(
-      factor(d$answer_text_row, levels = attr(d, "row_categories")),
-      factor(d$answer_text_col, levels = attr(d, "col_categories"))
-    )
+    counts <- crosstab_counts()
 
     if (identical(input$cross_display, "percent")) {
       total <- sum(counts)
@@ -355,6 +367,65 @@ shinyServer(function(input, output, session){
     } else {
       "クロス集計表（件数）"
     }
+  })
+
+  output$crosstab_heatmap_heading <- renderText({
+    if (identical(input$cross_display, "percent")) {
+      "クロス集計ヒートマップ（構成比）"
+    } else {
+      "クロス集計ヒートマップ（件数）"
+    }
+  })
+
+  output$crosstab_heatmap <- renderPlot({
+
+    d <- crosstab_data()
+    message <- attr(d, "message")
+
+    if (!is.null(message)) {
+      plot.new()
+      text(0.5, 0.5, message)
+      return()
+    }
+
+    counts <- crosstab_counts()
+    cells <- as.data.frame(counts, stringsAsFactors = FALSE)
+    names(cells) <- c("row", "column", "count")
+
+    total <- sum(cells$count)
+    is_percent <- identical(input$cross_display, "percent")
+
+    if (is_percent) {
+      cells$value <- cells$count / total * 100
+      cells$label <- paste0(format(round(cells$value, 1), nsmall = 1, trim = TRUE), "%")
+      fill_label <- "構成比（％）"
+    } else {
+      cells$value <- cells$count
+      cells$label <- as.character(cells$count)
+      fill_label <- "件数"
+    }
+
+    cells$row <- factor(cells$row, levels = rev(attr(d, "row_categories")))
+    cells$column <- factor(cells$column, levels = attr(d, "col_categories"))
+
+    ggplot(cells, aes(x = column, y = row, fill = value)) +
+      geom_tile(color = "white", linewidth = 1) +
+      geom_text(aes(label = label), family = "jp", size = 4.5) +
+      scale_fill_gradient(
+        low = "#F7FBFF",
+        high = "#08519C",
+        name = fill_label
+      ) +
+      labs(
+        x = attr(d, "col_title"),
+        y = attr(d, "row_title")
+      ) +
+      analysis_theme() +
+      theme(
+        axis.text.x = element_text(angle = 25, hjust = 1),
+        panel.grid = element_blank()
+      )
+
   })
 
   output$crosstab_note <- renderText({

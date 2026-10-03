@@ -66,6 +66,8 @@ shinyUI(
             h4(textOutput("crosstab_heading", inline = TRUE)),
             tableOutput("crosstab_table"),
             br(),
+            h4(textOutput("crosstab_heatmap_heading", inline = TRUE)),
+            plotOutput("crosstab_heatmap", height = "460px"),
             textOutput("crosstab_note")
           ),
 
