@@ -41,6 +41,12 @@ shinyUI(
 
         hr(),
 
+        h4("回答条件の絞り込み"),
+
+        uiOutput("filter_ui"),
+
+        hr(),
+
         downloadButton(
           "download_csv",
           "CSVダウンロード"
@@ -68,6 +74,20 @@ shinyUI(
             br(),
             h4(textOutput("crosstab_heatmap_heading", inline = TRUE)),
             plotOutput("crosstab_heatmap", height = "460px"),
+            h4("100%積み上げ棒グラフ"),
+            radioButtons(
+              "cross_stack_basis",
+              "割合の基準",
+              choices = c("行％（列の内訳）" = "row", "列％（行の内訳）" = "column"),
+              selected = "row",
+              inline = TRUE
+            ),
+            plotOutput("crosstab_stacked_plot", height = "430px"),
+            h4("統計的な差の検定"),
+            tableOutput("crosstab_stats_table"),
+            textOutput("crosstab_stats_note"),
+            h4("期待度数"),
+            tableOutput("crosstab_expected_table"),
             textOutput("crosstab_note")
           ),
 
@@ -78,7 +98,9 @@ shinyUI(
             hr(),
             plotOutput("numeric_relation_plot", height = "420px"),
             h4("相関の要約"),
-            tableOutput("numeric_relation_table")
+            tableOutput("numeric_relation_table"),
+            h4("残差プロット"),
+            plotOutput("numeric_residual_plot", height = "360px")
           )
         )
 

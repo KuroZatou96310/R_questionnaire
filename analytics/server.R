@@ -88,14 +88,12 @@ shinyServer(function(input, output, session){
   #-------------------------
   output$response_count <- renderText({
 
-    req(survey_answers())
+    req(survey_answers(), filtered_answers())
 
-    paste(
-      "回答数：",
-      length(unique(
-        survey_answers()$response_id
-      ))
-    )
+    total <- length(unique(survey_answers()$response_id))
+    filtered <- length(unique(filtered_answers()$response_id))
+
+    paste0("対象回答数：", filtered, " / ", total)
 
   })
 
@@ -247,9 +245,93 @@ shinyServer(function(input, output, session){
 
   }
 
+  #-------------------------
+  # 共通フィルター
+  #-------------------------
+  filter_question_ids <- reactive({
+
+    req(survey_questions())
+
+    ids <- names(survey_questions())
+    ids[vapply(
+      survey_questions()[ids],
+      function(q) q$type %in% c("single", "select", "multiple", "date"),
+      logical(1)
+    )]
+
+  })
+
+  output$filter_ui <- renderUI({
+
+    ids <- filter_question_ids()
+
+    if (length(ids) == 0) {
+      return(helpText("絞り込みに利用できる選択式の設問がありません。"))
+    }
+
+    qs <- survey_questions()
+    choices <- c("絞り込まない" = "", setNames(ids, vapply(qs[ids], function(q) q$title, character(1))))
+
+    tagList(
+      selectInput("filter_question", "設問", choices = choices, selected = ""),
+      uiOutput("filter_value_ui"),
+      actionButton("filter_clear", "条件をクリア", style = "width:100%;")
+    )
+
+  })
+
+  output$filter_value_ui <- renderUI({
+
+    req(survey_answers(), survey_questions())
+
+    if (is.null(input$filter_question) || !nzchar(input$filter_question)) {
+      return(NULL)
+    }
+
+    qs <- survey_questions()
+
+    if (!(input$filter_question %in% names(qs))) {
+      return(NULL)
+    }
+
+    values <- answered_question_data(survey_answers(), input$filter_question)
+    values <- expand_categorical_answers(values, qs[[input$filter_question]]$type)
+    choices <- question_categories(qs[[input$filter_question]], values$answer_text)
+
+    selectInput("filter_values", "含める回答", choices = choices, multiple = TRUE)
+
+  })
+
+  observeEvent(input$filter_clear, {
+    updateSelectInput(session, "filter_question", selected = "")
+  })
+
+  filtered_answers <- reactive({
+
+    req(survey_answers())
+
+    if (is.null(input$filter_question) || !nzchar(input$filter_question) ||
+        is.null(input$filter_values) || length(input$filter_values) == 0) {
+      return(survey_answers())
+    }
+
+    qs <- survey_questions()
+
+    if (!(input$filter_question %in% names(qs))) {
+      return(survey_answers())
+    }
+
+    filter_data <- answered_question_data(survey_answers(), input$filter_question)
+    filter_data <- expand_categorical_answers(filter_data, qs[[input$filter_question]]$type)
+    response_ids <- unique(filter_data$response_id[filter_data$answer_text %in% input$filter_values])
+
+    survey_answers()[survey_answers()$response_id %in% response_ids, , drop = FALSE]
+
+  })
+
   crosstab_data <- reactive({
 
-    req(survey_answers(), survey_questions(), input$cross_row, input$cross_col)
+    req(filtered_answers(), survey_questions(), input$cross_row, input$cross_col)
 
     qs <- survey_questions()
 
@@ -272,7 +354,7 @@ shinyServer(function(input, output, session){
       return(empty_result("設問を選択してください。"))
     }
 
-    ans <- survey_answers()
+    ans <- filtered_answers()
     row_data <- answered_question_data(ans, input$cross_row)
     col_data <- answered_question_data(ans, input$cross_col)
 
@@ -428,6 +510,144 @@ shinyServer(function(input, output, session){
 
   })
 
+  output$crosstab_stacked_plot <- renderPlot({
+
+    d <- crosstab_data()
+    message <- attr(d, "message")
+
+    if (!is.null(message)) {
+      plot.new()
+      text(0.5, 0.5, message)
+      return()
+    }
+
+    counts <- crosstab_counts()
+    cells <- as.data.frame(counts, stringsAsFactors = FALSE)
+    names(cells) <- c("row", "column", "count")
+
+    if (identical(input$cross_stack_basis, "column")) {
+      plot_data <- transform(cells, group = column, category = row)
+      x_label <- attr(d, "col_title")
+      fill_label <- attr(d, "row_title")
+    } else {
+      plot_data <- transform(cells, group = row, category = column)
+      x_label <- attr(d, "row_title")
+      fill_label <- attr(d, "col_title")
+    }
+
+    plot_data$group <- factor(plot_data$group)
+    plot_data$category <- factor(plot_data$category)
+
+    ggplot(plot_data, aes(x = group, y = count, fill = category)) +
+      geom_col(position = "fill", width = 0.72, color = "white") +
+      scale_y_continuous(labels = function(x) paste0(round(x * 100), "%")) +
+      scale_fill_brewer(palette = "Set2", name = fill_label) +
+      labs(x = x_label, y = "構成比") +
+      analysis_theme() +
+      theme(axis.text.x = element_text(angle = 20, hjust = 1))
+
+  })
+
+  crosstab_statistics <- reactive({
+
+    d <- crosstab_data()
+    counts <- crosstab_counts()
+
+    if (!is.null(attr(d, "message")) || is.null(counts)) {
+      return(list(message = attr(d, "message")))
+    }
+
+    active_counts <- counts[rowSums(counts) > 0, colSums(counts) > 0, drop = FALSE]
+
+    if (nrow(active_counts) < 2 || ncol(active_counts) < 2) {
+      return(list(message = "検定には、回答がある行・列がそれぞれ2項目以上必要です。"))
+    }
+
+    test <- tryCatch(
+      suppressWarnings(chisq.test(active_counts, correct = FALSE)),
+      error = function(e) e
+    )
+
+    if (inherits(test, "error")) {
+      return(list(message = "カイ二乗検定を計算できませんでした。"))
+    }
+
+    n <- sum(active_counts)
+    cramers_v <- sqrt(as.numeric(test$statistic) / (n * min(nrow(active_counts) - 1, ncol(active_counts) - 1)))
+    small_expected <- sum(test$expected < 5)
+
+    list(
+      counts = active_counts,
+      expected = test$expected,
+      statistic = as.numeric(test$statistic),
+      df = as.numeric(test$parameter),
+      p_value = test$p.value,
+      cramers_v = cramers_v,
+      small_expected = small_expected,
+      expected_cells = length(test$expected)
+    )
+
+  })
+
+  output$crosstab_stats_table <- renderTable({
+
+    stats <- crosstab_statistics()
+
+    if (!is.null(stats$message)) {
+      result <- data.frame(message = stats$message, check.names = FALSE)
+      names(result) <- "案内"
+      return(result)
+    }
+
+    result <- data.frame(
+      metric = c("カイ二乗値", "自由度", "p値", "Cramér's V"),
+      value = c(
+        sprintf("%.3f", stats$statistic),
+        stats$df,
+        format.pval(stats$p_value, digits = 3, eps = 0.001),
+        sprintf("%.3f", stats$cramers_v)
+      ),
+      check.names = FALSE
+    )
+    names(result) <- c("指標", "値")
+    result
+
+  }, rownames = FALSE)
+
+  output$crosstab_stats_note <- renderText({
+
+    stats <- crosstab_statistics()
+
+    if (!is.null(stats$message)) return(stats$message)
+
+    if (stats$small_expected > 0) {
+      paste0(
+        "注意：期待度数が5未満のセルが ", stats$small_expected, " / ",
+        stats$expected_cells, " あります。カイ二乗検定の結果は慎重に解釈してください。"
+      )
+    } else {
+      "すべての期待度数が5以上です。"
+    }
+
+  })
+
+  output$crosstab_expected_table <- renderTable({
+
+    stats <- crosstab_statistics()
+
+    if (!is.null(stats$message)) {
+      result <- data.frame(message = stats$message, check.names = FALSE)
+      names(result) <- "案内"
+      return(result)
+    }
+
+    expected <- round(stats$expected, 2)
+    result <- data.frame(row = rownames(expected), expected, check.names = FALSE)
+    names(result)[1] <- "行の選択肢"
+    result
+
+  }, rownames = FALSE)
+
   output$crosstab_note <- renderText({
 
     d <- crosstab_data()
@@ -478,7 +698,7 @@ shinyServer(function(input, output, session){
 
   numeric_relation_data <- reactive({
 
-    req(survey_answers(), survey_questions(), input$numeric_x, input$numeric_y)
+    req(filtered_answers(), survey_questions(), input$numeric_x, input$numeric_y)
 
     empty_result <- function(message) {
       result <- data.frame(response_id = character(), x = numeric(), y = numeric())
@@ -490,7 +710,7 @@ shinyServer(function(input, output, session){
       return(empty_result("横軸と縦軸には異なる設問を選んでください。"))
     }
 
-    ans <- survey_answers()
+    ans <- filtered_answers()
     x_answers <- answered_question_data(ans, input$numeric_x)
     y_answers <- answered_question_data(ans, input$numeric_y)
     x <- data.frame(response_id = x_answers$response_id, x = x_answers$answer_text)
@@ -539,14 +759,39 @@ shinyServer(function(input, output, session){
 
   })
 
-  output$numeric_relation_table <- renderTable({
+  numeric_relation_statistics <- reactive({
 
     d <- numeric_relation_data()
     message <- attr(d, "message")
 
-    if (is.null(message) && nrow(d) < 2) {
-      message <- "相関を計算するには、2人以上の回答が必要です。"
+    if (!is.null(message)) {
+      return(list(message = message))
     }
+
+    if (nrow(d) < 3 || length(unique(d$x)) < 2 || length(unique(d$y)) < 2) {
+      return(list(message = "相関・回帰分析には、変動のある3件以上の回答が必要です。"))
+    }
+
+    pearson <- cor.test(d$x, d$y, method = "pearson")
+    spearman <- suppressWarnings(cor.test(d$x, d$y, method = "spearman", exact = FALSE))
+    model <- lm(y ~ x, data = d)
+    standard_residuals <- rstandard(model)
+
+    list(
+      data = d,
+      pearson = pearson,
+      spearman = spearman,
+      model = model,
+      standard_residuals = standard_residuals,
+      outlier_count = sum(abs(standard_residuals) > 2, na.rm = TRUE)
+    )
+
+  })
+
+  output$numeric_relation_table <- renderTable({
+
+    stats <- numeric_relation_statistics()
+    message <- stats$message
 
     if (!is.null(message)) {
       result <- data.frame(message = message, stringsAsFactors = FALSE)
@@ -554,12 +799,29 @@ shinyServer(function(input, output, session){
       return(result)
     }
 
+    coefficients <- coef(stats$model)
+    ci <- stats$pearson$conf.int
+
     result <- data.frame(
-      metric = c("有効回答数", "Pearson相関係数", "Spearman相関係数"),
+      metric = c(
+        "有効回答数",
+        "Pearson相関係数",
+        "Pearson p値",
+        "Pearson 95%信頼区間",
+        "Spearman相関係数",
+        "Spearman p値",
+        "回帰式",
+        "外れ値（標準化残差が±2超）"
+      ),
       value = c(
-        nrow(d),
-        round(cor(d$x, d$y, method = "pearson"), 3),
-        round(cor(d$x, d$y, method = "spearman"), 3)
+        nrow(stats$data),
+        sprintf("%.3f", unname(stats$pearson$estimate)),
+        format.pval(stats$pearson$p.value, digits = 3, eps = 0.001),
+        paste0("[", sprintf("%.3f", ci[1]), ", ", sprintf("%.3f", ci[2]), "]"),
+        sprintf("%.3f", unname(stats$spearman$estimate)),
+        format.pval(stats$spearman$p.value, digits = 3, eps = 0.001),
+        paste0("y = ", sprintf("%.3f", coefficients[1]), " + ", sprintf("%.3f", coefficients[2]), " × x"),
+        stats$outlier_count
       ),
       check.names = FALSE
     )
@@ -569,6 +831,32 @@ shinyServer(function(input, output, session){
 
   }, rownames = FALSE)
 
+  output$numeric_residual_plot <- renderPlot({
+
+    stats <- numeric_relation_statistics()
+
+    if (!is.null(stats$message)) {
+      plot.new()
+      text(0.5, 0.5, stats$message)
+      return()
+    }
+
+    residual_data <- data.frame(
+      fitted = fitted(stats$model),
+      residual = stats$standard_residuals,
+      outlier = abs(stats$standard_residuals) > 2
+    )
+
+    ggplot(residual_data, aes(x = fitted, y = residual, color = outlier)) +
+      geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5) +
+      geom_hline(yintercept = c(-2, 2), color = "#D95F0E", linetype = "dashed") +
+      geom_point(size = 3, alpha = 0.8) +
+      scale_color_manual(values = c("FALSE" = "#2C7FB8", "TRUE" = "#D95F0E"), labels = c("通常", "外れ値候補"), name = NULL) +
+      labs(title = "標準化残差", x = "予測値", y = "標準化残差") +
+      analysis_theme()
+
+  })
+
   #-------------------------
   # グラフ・表生成
   #-------------------------
@@ -576,11 +864,11 @@ shinyServer(function(input, output, session){
 
     req(
       survey_questions(),
-      survey_answers()
+      filtered_answers()
     )
 
     qs <- survey_questions()
-    ans <- survey_answers()
+    ans <- filtered_answers()
 
     for(id in names(qs)){
 
