@@ -792,17 +792,55 @@ shinyServer(function(input, output, session){
 
     content=function(file){
 
-      write.csv(
+      req(survey_questions(), survey_answers())
 
-        survey_answers(),
+      survey <- load_survey_info(input$survey_id)
+      questions <- survey_questions()
+      answers <- survey_answers()
 
-        file,
+      empty_text <- function(value) {
+        if (length(value) == 0 || is.na(value)) "" else enc2utf8(as.character(value))
+      }
 
-        row.names=FALSE,
+      exported <- lapply(seq_len(nrow(answers)), function(i) {
 
-        fileEncoding="UTF-8"
+        answer <- answers[i, , drop = FALSE]
+        question <- questions[[answer$question_id]]
 
-      )
+        choices <- if (is.null(question$options)) {
+          ""
+        } else {
+          paste(enc2utf8(as.character(unlist(question$options, use.names = FALSE))), collapse = " | ")
+        }
+
+        data.frame(
+          "アンケートID" = survey$id,
+          "アンケートタイトル" = empty_text(survey$title),
+          "アンケート説明" = empty_text(survey$description),
+          "設問ID" = empty_text(question$id),
+          "設問" = empty_text(question$title),
+          "設問説明" = empty_text(question$desc),
+          "種類" = empty_text(question$type),
+          "選択肢" = choices,
+          "最小値" = empty_text(question$min),
+          "最大値" = empty_text(question$max),
+          "回答ID" = empty_text(answer$response_id),
+          "回答日時" = empty_text(answer$submitted_at),
+          "回答" = empty_text(answer$answer_text),
+          check.names = FALSE,
+          stringsAsFactors = FALSE
+        )
+
+      })
+
+      exported <- do.call(rbind, exported)
+
+      con <- file(file, open = "wb")
+      on.exit(close(con), add = TRUE)
+
+      # Excelでも日本語を正しく表示できるUTF-8 BOM付きCSV
+      writeBin(charToRaw("\ufeff"), con)
+      write.csv(exported, con, row.names = FALSE, fileEncoding = "UTF-8", na = "")
 
     }
 

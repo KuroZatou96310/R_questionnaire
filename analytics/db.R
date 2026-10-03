@@ -126,6 +126,38 @@ load_db <- function() {
 }
 
 # =========================
+# アンケート情報
+# =========================
+
+load_survey_info <- function(survey_id) {
+
+  init_db()
+
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
+
+  survey <- dbGetQuery(
+    con,
+    "
+      SELECT survey_id, title, description
+      FROM surveys
+      WHERE survey_id = ?
+    ",
+    params = list(survey_id)
+  )
+
+  if (nrow(survey) == 0) {
+    return(list(id = survey_id, title = "", description = ""))
+  }
+
+  list(
+    id = enc2utf8(as.character(survey$survey_id[1])),
+    title = enc2utf8(as.character(survey$title[1])),
+    description = enc2utf8(as.character(survey$description[1]))
+  )
+}
+
+# =========================
 # 質問読み込み
 # =========================
 
