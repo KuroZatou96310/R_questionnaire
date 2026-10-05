@@ -1,4 +1,5 @@
 library(shiny)
+library(qrcode)
 source("db.R")
 
 # Define server logic required to draw a histogram
