@@ -8,6 +8,7 @@ shinyServer(function(input, output, session) {
   # 作業中アンケート（順序付き）
   store      <- reactiveValues(order = character(0), questions = list())
   current_id <- reactiveVal(NULL)
+  edit_options_target <- reactiveVal(NULL)
   
   # ---------- 既存アンケート読み込み ----------
   observeEvent(input$load_survey, {
@@ -54,7 +55,7 @@ shinyServer(function(input, output, session) {
     # 選択肢チェック
     options <- NULL
     if (input$q_type %in% c("single", "multiple", "select")) {
-      options <- strsplit(input$q_options, "[\r\n]+")[[1]]
+      options <- strsplit(gsub("\r\n?", "\n", input$q_options), "\n", fixed = TRUE)[[1]]
       options <- trimws(options)
       options <- options[nzchar(options)]
       if (length(options) == 0) {
@@ -105,6 +106,67 @@ shinyServer(function(input, output, session) {
     qs[[id]] <- NULL
     store$questions <- qs
     store$order     <- store$order[store$order != id]
+
+    if (!is.null(current_id())) {
+      delete_question_and_answers(current_id(), id)
+    }
+  })
+
+  # ---------- 選択肢の改変 ----------
+  observeEvent(input$edit_options_qid, {
+
+    qid <- input$edit_options_qid
+    req(nzchar(qid), qid %in% names(store$questions))
+
+    edit_options_target(qid)
+    showModal(modalDialog(
+      title = paste0("選択肢を改変：", store$questions[[qid]]$title),
+      textAreaInput(
+        "edit_options_text",
+        "選択肢（1行に1つ）",
+        value = paste(as.character(unlist(store$questions[[qid]]$options)), collapse = "\n"),
+        placeholder = "例：とても満足\nやや満足",
+        rows = 8
+      ),
+      footer = tagList(
+        modalButton("キャンセル"),
+        actionButton("edit_options_save", "この内容で上書き")
+      ),
+      easyClose = TRUE
+    ))
+
+  })
+
+  observeEvent(input$edit_options_save, {
+
+    qid <- edit_options_target()
+    req(qid, qid %in% names(store$questions))
+
+    edit_text <- if (is.null(input$edit_options_text)) "" else input$edit_options_text
+    options <- strsplit(gsub("\r\n?", "\n", edit_text), "\n", fixed = TRUE)[[1]]
+    options <- unique(trimws(options))
+    options <- options[nzchar(options)]
+
+    if (length(options) == 0) {
+      showNotification("選択肢を1つ以上入力してください", type = "error")
+      return()
+    }
+
+    q <- store$questions[[qid]]
+    q$options <- options
+    qs <- store$questions
+    qs[[qid]] <- q
+    store$questions <- qs
+
+    if (!is.null(current_id()) && nzchar(input$survey_pw)) {
+      update_question_options(current_id(), qid, q$options)
+      showNotification("選択肢を改変して保存しました", type = "message")
+    } else {
+      showNotification("選択肢を改変しました。アンケートを保存してください", type = "message")
+    }
+
+    removeModal()
+
   })
   
   # ---------- 上移動 ----------
@@ -148,6 +210,12 @@ shinyServer(function(input, output, session) {
           span(style = "color:#555;", paste("タイプ:", q$type)), br(),
           if (!is.null(q$options))
             div(paste("選択肢:", paste(unlist(q$options), collapse = ", "))),
+          if (q$type %in% c("single", "multiple", "select"))
+            actionButton(
+              paste0("edit_", id), "選択肢を改変",
+              onclick = sprintf(
+                "Shiny.setInputValue('edit_options_qid','%s',{priority:'event'})", id)
+            ),
           if (!is.null(q$min) && q$type == "slider")
             div(paste0("範囲: ", q$min, "〜", q$max)),
           div(

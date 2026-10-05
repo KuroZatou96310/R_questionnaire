@@ -33,6 +33,8 @@ init_db <- function() {
     DB_FILE
   )
 
+  dbExecute(con, "PRAGMA foreign_keys = ON")
+
   on.exit(
     dbDisconnect(con),
     add = TRUE
@@ -63,7 +65,7 @@ init_db <- function() {
       min_value REAL,
       max_value REAL,
       FOREIGN KEY(survey_id)
-        REFERENCES surveys(survey_id)
+        REFERENCES surveys(survey_id) ON DELETE CASCADE
     )
   ")
 
@@ -74,7 +76,7 @@ init_db <- function() {
       survey_id TEXT NOT NULL,
       submitted_at TEXT,
       FOREIGN KEY(survey_id)
-        REFERENCES surveys(survey_id)
+        REFERENCES surveys(survey_id) ON DELETE CASCADE
     )
   ")
 
@@ -86,7 +88,9 @@ init_db <- function() {
       question_id TEXT NOT NULL,
       answer_text TEXT,
       FOREIGN KEY(response_id)
-        REFERENCES responses(response_id)
+        REFERENCES responses(response_id) ON DELETE CASCADE,
+      FOREIGN KEY(question_id)
+        REFERENCES questions(question_id) ON DELETE CASCADE
     )
   ")
 }
@@ -361,6 +365,60 @@ save_db <- function(
   }
 
   TRUE
+}
+
+# 保存済み設問の選択肢だけを追加更新する
+update_question_options <- function(survey_id, question_id, options) {
+
+  init_db()
+
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
+
+  dbExecute(
+    con,
+    "
+      UPDATE questions
+      SET options_json = ?
+      WHERE survey_id = ? AND question_id = ?
+    ",
+    list(toJSON(unique(as.character(options)), auto_unbox = TRUE), survey_id, question_id)
+  )
+}
+
+# 設問と、その設問に紐づく回答を削除する
+delete_question_and_answers <- function(survey_id, question_id) {
+
+  init_db()
+
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
+
+  dbBegin(con)
+  committed <- FALSE
+  on.exit(if (!committed) dbRollback(con), add = TRUE)
+
+  dbExecute(
+    con,
+    "
+      DELETE FROM answers
+      WHERE question_id = ?
+        AND response_id IN (
+          SELECT response_id FROM responses WHERE survey_id = ?
+        )
+    ",
+    list(question_id, survey_id)
+  )
+
+  dbExecute(
+    con,
+    "DELETE FROM questions WHERE survey_id = ? AND question_id = ?",
+    list(survey_id, question_id)
+  )
+
+  dbCommit(con)
+  committed <- TRUE
+  invisible(TRUE)
 }
 
 # =========================

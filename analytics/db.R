@@ -56,7 +56,7 @@ init_db <- function() {
       min_value REAL,
       max_value REAL,
       FOREIGN KEY(survey_id)
-        REFERENCES surveys(survey_id)
+        REFERENCES surveys(survey_id) ON DELETE CASCADE
     )
   ")
 
@@ -67,7 +67,7 @@ init_db <- function() {
       survey_id TEXT NOT NULL,
       submitted_at TEXT,
       FOREIGN KEY(survey_id)
-        REFERENCES surveys(survey_id)
+        REFERENCES surveys(survey_id) ON DELETE CASCADE
     )
   ")
 
@@ -79,7 +79,9 @@ init_db <- function() {
       question_id TEXT NOT NULL,
       answer_text TEXT,
       FOREIGN KEY(response_id)
-        REFERENCES responses(response_id)
+        REFERENCES responses(response_id) ON DELETE CASCADE,
+      FOREIGN KEY(question_id)
+        REFERENCES questions(question_id) ON DELETE CASCADE
     )
   ")
 }

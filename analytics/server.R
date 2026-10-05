@@ -19,10 +19,20 @@ analysis_theme <- function() {
     )
 }
 
-frequency_plot <- function(values, title, fill = "#2C7FB8") {
-  counts <- as.data.frame(table(values), stringsAsFactors = FALSE)
+frequency_plot <- function(values, title, fill = "#2C7FB8", categories = NULL) {
+  values <- as.character(values)
+  if (!is.null(categories)) {
+    categories <- unique(as.character(categories))
+    values <- factor(values, levels = categories)
+  }
+  counts <- as.data.frame(table(values, useNA = "no"), stringsAsFactors = FALSE)
   names(counts) <- c("answer", "count")
   counts <- counts[counts$answer != "" & !is.na(counts$answer), , drop = FALSE]
+
+  if (nrow(counts) == 0) {
+    return(ggplot() + theme_void() +
+      annotate("text", x = 0, y = 0, label = "回答なし", family = "jp"))
+  }
 
   ggplot(counts, aes(x = reorder(answer, count), y = count)) +
     geom_col(fill = fill, width = 0.68) +
@@ -128,8 +138,13 @@ shinyServer(function(input, output, session){
             height = "350px"
           ),
 
-          tableOutput(
-            paste0("table_",id)
+          tags$details(
+            style = "margin:12px 0;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;",
+            tags$summary(
+              "▼ 回答件数一覧・統計値",
+              style = "cursor:pointer;padding:10px 12px;background:#f1f5f9;font-weight:600;color:#1e293b;"
+            ),
+            tableOutput(paste0("table_", id))
           )
 
         )
@@ -150,7 +165,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single", "select", "multiple", "date"),
+      function(q) q$type %in% c("single", "select", "multiple", "date", "numeric", "slider"),
       logical(1)
     )]
 
@@ -170,13 +185,7 @@ shinyServer(function(input, output, session){
     tagList(
       selectInput("cross_row", "行にする設問", choices = choices, selected = ids[1]),
       selectInput("cross_col", "列にする設問", choices = choices, selected = ids[2]),
-      radioButtons(
-        "cross_display",
-        "表示方法",
-        choices = c("件数" = "count", "構成比（％）" = "percent"),
-        selected = "count",
-        inline = TRUE
-      )
+
     )
 
   })
@@ -266,7 +275,7 @@ shinyServer(function(input, output, session){
     ids <- filter_question_ids()
 
     if (length(ids) == 0) {
-      return(helpText("絞り込みに利用できる選択式の設問がありません。"))
+      return(helpText("絞り込みに利用できる設問がありません。"))
     }
 
     qs <- survey_questions()
@@ -294,9 +303,19 @@ shinyServer(function(input, output, session){
       return(NULL)
     }
 
+    question <- qs[[input$filter_question]]
+
+    if (question$type %in% c("numeric", "slider")) {
+      return(tagList(
+        numericInput("filter_min", "以上", value = NA, step = "any"),
+        numericInput("filter_max", "以下", value = NA, step = "any"),
+        helpText("片方だけ指定することもできます。")
+      ))
+    }
+
     values <- answered_question_data(survey_answers(), input$filter_question)
-    values <- expand_categorical_answers(values, qs[[input$filter_question]]$type)
-    choices <- question_categories(qs[[input$filter_question]], values$answer_text)
+    values <- expand_categorical_answers(values, question$type)
+    choices <- question_categories(question, values$answer_text)
 
     selectInput("filter_values", "含める回答", choices = choices, multiple = TRUE)
 
@@ -304,20 +323,43 @@ shinyServer(function(input, output, session){
 
   observeEvent(input$filter_clear, {
     updateSelectInput(session, "filter_question", selected = "")
+    updateNumericInput(session, "filter_min", value = NA)
+    updateNumericInput(session, "filter_max", value = NA)
   })
 
   filtered_answers <- reactive({
 
     req(survey_answers())
 
-    if (is.null(input$filter_question) || !nzchar(input$filter_question) ||
-        is.null(input$filter_values) || length(input$filter_values) == 0) {
+    if (is.null(input$filter_question) || !nzchar(input$filter_question)) {
       return(survey_answers())
     }
 
     qs <- survey_questions()
 
     if (!(input$filter_question %in% names(qs))) {
+      return(survey_answers())
+    }
+
+    question <- qs[[input$filter_question]]
+
+    if (question$type %in% c("numeric", "slider")) {
+      values <- answered_question_data(survey_answers(), input$filter_question)
+      values$numeric_value <- suppressWarnings(as.numeric(values$answer_text))
+      keep <- !is.na(values$numeric_value)
+
+      if (!is.null(input$filter_min) && !is.na(input$filter_min)) {
+        keep <- keep & values$numeric_value >= input$filter_min
+      }
+      if (!is.null(input$filter_max) && !is.na(input$filter_max)) {
+        keep <- keep & values$numeric_value <= input$filter_max
+      }
+
+      response_ids <- unique(values$response_id[keep])
+      return(survey_answers()[survey_answers()$response_id %in% response_ids, , drop = FALSE])
+    }
+
+    if (is.null(input$filter_values) || length(input$filter_values) == 0) {
       return(survey_answers())
     }
 
@@ -907,12 +949,12 @@ shinyServer(function(input, output, session){
             q$type,
 
             single = {
-              print(frequency_plot(d$answer_text, q$title))
+              print(frequency_plot(d$answer_text, q$title, categories = unlist(q$options)))
 
             },
 
             select = {
-              print(frequency_plot(d$answer_text, q$title))
+              print(frequency_plot(d$answer_text, q$title, categories = unlist(q$options)))
 
             },
 
@@ -925,7 +967,7 @@ shinyServer(function(input, output, session){
                 )
               )
 
-              print(frequency_plot(trimws(x), q$title, "#F28E2B"))
+              print(frequency_plot(trimws(x), q$title, "#F28E2B", unlist(q$options)))
 
             },
 
@@ -935,7 +977,9 @@ shinyServer(function(input, output, session){
               print(
                 ggplot(data.frame(value = values), aes(x = value)) +
                   geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
+                  stat_bin(bins = 12, geom = "text", aes(label = after_stat(count)), vjust = -0.4, family = "jp") +
                   labs(title = q$title, x = "値", y = "回答数") +
+                  scale_y_continuous(expand = expansion(mult = c(0, 0.16))) +
                   analysis_theme()
               )
 
@@ -947,7 +991,9 @@ shinyServer(function(input, output, session){
               print(
                 ggplot(data.frame(value = values), aes(x = value)) +
                   geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
+                  stat_bin(bins = 12, geom = "text", aes(label = after_stat(count)), vjust = -0.4, family = "jp") +
                   labs(title = q$title, x = "値", y = "回答数") +
+                  scale_y_continuous(expand = expansion(mult = c(0, 0.16))) +
                   analysis_theme()
               )
 
@@ -955,7 +1001,7 @@ shinyServer(function(input, output, session){
 
             date = {
 
-              print(frequency_plot(d$answer_text, q$title, "#AF7AA1"))
+              print(frequency_plot(d$answer_text, q$title, "#AF7AA1", unlist(q$options)))
 
             },
 

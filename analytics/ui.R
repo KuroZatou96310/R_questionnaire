@@ -67,12 +67,10 @@ shinyUI(
           tabPanel(
             "クロス集計",
             br(),
+            uiOutput("crosstab_ui"),
+            hr(),
             textOutput("crosstab_note"),
             hr(),
-            uiOutput("crosstab_ui"),
-
-            hr(),
-
             h4(textOutput("crosstab_heading")),
 
             radioButtons(
