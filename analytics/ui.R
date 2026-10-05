@@ -67,14 +67,32 @@ shinyUI(
           tabPanel(
             "クロス集計",
             br(),
-            uiOutput("crosstab_ui"),
+            textOutput("crosstab_note"),
             hr(),
-            h4(textOutput("crosstab_heading", inline = TRUE)),
+            uiOutput("crosstab_ui"),
+
+            hr(),
+
+            h4(textOutput("crosstab_heading")),
+
+            radioButtons(
+              "cross_display",
+              "表示方法",
+              choices = c(
+                "件数" = "count",
+                "構成比（％）" = "percent"
+              ),
+              selected = "count",
+              inline = TRUE
+            ),
+
             tableOutput("crosstab_table"),
             br(),
             h4(textOutput("crosstab_heatmap_heading", inline = TRUE)),
             plotOutput("crosstab_heatmap", height = "460px"),
+            hr(),
             h4("100%積み上げ棒グラフ"),
+
             radioButtons(
               "cross_stack_basis",
               "割合の基準",
@@ -82,13 +100,15 @@ shinyUI(
               selected = "row",
               inline = TRUE
             ),
+            
             plotOutput("crosstab_stacked_plot", height = "430px"),
+            hr(),
             h4("統計的な差の検定"),
             tableOutput("crosstab_stats_table"),
             textOutput("crosstab_stats_note"),
             h4("期待度数"),
             tableOutput("crosstab_expected_table"),
-            textOutput("crosstab_note")
+
           ),
 
           tabPanel(
