@@ -123,7 +123,7 @@ shinyServer(function(input, output, session) {
       title = paste0("選択肢を改変：", store$questions[[qid]]$title),
       textAreaInput(
         "edit_options_text",
-        "選択肢（1行に1つ）",
+        "※アンケート実施途中に選択肢を変更すると、変更前後の回答を正確に比較できず、統計分析に影響する場合があります。",
         value = paste(as.character(unlist(store$questions[[qid]]$options)), collapse = "\n"),
         placeholder = "例：とても満足\nやや満足",
         rows = 8
