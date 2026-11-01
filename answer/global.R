@@ -6,13 +6,23 @@ answer_question_ui <- function(q) {
 
   input <- switch(
     q$type,
-    single   = radioButtons(q$id, NULL, choices = options),
+    single   = radioButtons(q$id, NULL, choices = options, selected = character(0)),
     multiple = checkboxGroupInput(q$id, NULL, choices = options),
-    select   = selectInput(q$id, NULL, choices = options, selectize = FALSE),
+    select   = tags$select(
+      id = q$id,
+      class = "form-control shiny-input-select",
+      tags$option("選択してください", value = "", selected = NA, disabled = NA),
+      lapply(options, function(option) tags$option(option, value = option))
+    ),
     numeric  = numericInput(q$id, NULL, value = NA),
     text     = textAreaInput(q$id, NULL, rows = 3),
     slider   = sliderInput(q$id, NULL, min = q$min, max = q$max, value = q$min),
-    date     = dateInput(q$id, NULL),
+    date     = {
+      date_input <- dateInput(q$id, NULL, value = Sys.Date())
+      date_input$children[[2]]$attribs[["data-initial-date"]] <- ""
+      date_input$children[[2]]$attribs$placeholder <- "日付を選択"
+      date_input
+    },
     NULL
   )
 

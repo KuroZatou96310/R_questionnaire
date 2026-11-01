@@ -82,5 +82,5 @@ CMD ["/usr/bin/shiny-server"]
 
 
 #docker build -t shiny-server .\
-#docker run -d -p 3838:3838 --name aa22222 shiny-server
+#docker run -d -p 3838:3838 --name questionnaire shiny-server
 #Ctrl + Shift + P -> Dev Containers: Attach to Running Container... -> aaaaaaaみたいな感じ

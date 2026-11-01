@@ -63,11 +63,28 @@ shinyServer(function(input, output, session){
     req(qs)
 
     answers <- list()
+    unanswered <- character(0)
 
-    for(q in qs){
+    for (q in qs) {
+      value <- input[[q$id]]
+      has_value <- !is.null(value) && length(value) > 0 &&
+        any(!is.na(value) & nzchar(trimws(as.character(value))))
+      if (!has_value) {
+        unanswered <- c(unanswered, q$title)
+      } else {
+        answers[[q$id]] <- value
+      }
+    }
 
-      answers[[q$id]] <- input[[q$id]]
-
+    if (length(unanswered)) {
+      showModal(modalDialog(
+        title = "未回答の設問",
+        p("以下の設問に回答してください。"),
+        tags$ul(lapply(unanswered, tags$li)),
+        easyClose = TRUE,
+        footer = modalButton("戻る")
+      ))
+      return()
     }
 
     save_response(
