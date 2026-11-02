@@ -50,6 +50,11 @@ init_db <- function() {
     )
   ")
 
+  survey_columns <- dbGetQuery(con, "PRAGMA table_info(surveys)")$name
+  if (!("random_start" %in% survey_columns)) {
+    try(dbExecute(con, "ALTER TABLE surveys ADD COLUMN random_start INTEGER"), silent = TRUE)
+  }
+
   # questions
   dbExecute(con, "
     CREATE TABLE IF NOT EXISTS questions (
@@ -89,6 +94,21 @@ init_db <- function() {
         REFERENCES responses(response_id)
     )
   ")
+}
+
+load_random_start <- function(survey_id) {
+
+  init_db()
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
+
+  value <- dbGetQuery(
+    con,
+    "SELECT random_start FROM surveys WHERE survey_id = ?",
+    params = list(survey_id)
+  )
+
+  if (nrow(value) == 0 || is.na(value$random_start[1])) NULL else as.integer(value$random_start[1])
 }
 
 # =========================

@@ -11,6 +11,27 @@ shinyUI(fluidPage(
       passwordInput("survey_pw", "アンケートパスワード（必須）"),
       actionButton("load_survey", "既存アンケートを読み込む"),
       hr(),
+
+      h4("標準化プリセット"),
+      selectInput(
+        "preset_name",
+        "プリセットを選択",
+        choices = c("選択してください" = "", "SUS", "UMUX-Lite", "UEQ", "UEQ-S", "NASA-TLX", "TAM", "GEQ", "IMI")
+      ),
+      actionButton("add_preset", "プリセットを設問に追加"),
+      helpText("選択した質問群を現在の設問一覧の末尾へ追加します。"),
+      hr(),
+
+      h4("質問順序のランダム化"),
+      numericInput(
+        "random_start",
+        "X番目以降の設問をランダム化",
+        value = NA,
+        min = 1,
+        step = 1
+      ),
+      helpText("指定した番号より前の設問は固定し、それ以降を回答者ごとに並べ替えます。"),
+      hr(),
       
       h4("設問を追加"),
       textInput("q_title", "設問タイトル"),

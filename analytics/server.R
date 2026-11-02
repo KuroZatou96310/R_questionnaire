@@ -1,6 +1,7 @@
 library(shiny)
 library(showtext)
 library(ggplot2)
+library(wordcloud)
 
 # Shiny Server の既定ロケールが C の場合でも、日本語をUTF-8として表示する
 try(Sys.setlocale("LC_CTYPE", "C.UTF-8"), silent = TRUE)
@@ -41,6 +42,30 @@ frequency_plot <- function(values, title, fill = "#2C7FB8", categories = NULL) {
     labs(title = title, x = NULL, y = "回答数") +
     expand_limits(y = max(counts$count, 0) * 1.15) +
     analysis_theme()
+}
+
+word_tokens <- function(values) {
+  text <- paste(as.character(values), collapse = " ")
+  if (!nzchar(trimws(text))) return(character(0))
+
+  tokens <- if (requireNamespace("stringi", quietly = TRUE)) {
+    unlist(stringi::stri_split_boundaries(text, type = "word"))
+  } else {
+    chunks <- unlist(strsplit(gsub("[^[:alnum:]ぁ-んァ-ヶ一-龠]+", " ", text), "\\s+"))
+    unlist(lapply(chunks, function(chunk) {
+      chars <- strsplit(chunk, "", fixed = TRUE)[[1]]
+      if (grepl("[ぁ-んァ-ヶ一-龠]", chunk) && length(chars) >= 3) {
+        paste(chars[-length(chars)], chars[-1], sep = "")
+      } else {
+        chunk
+      }
+    }))
+  }
+
+  tokens <- trimws(tokens)
+  tokens <- tokens[nzchar(tokens) & nchar(tokens) >= 2]
+  stopwords <- c("これ", "それ", "ため", "こと", "よう", "さん", "する", "なる", "ある", "いる", "この", "その", "から", "まで")
+  tokens[!(tokens %in% stopwords)]
 }
 
 shinyServer(function(input, output, session){
@@ -137,6 +162,10 @@ shinyServer(function(input, output, session){
             paste0("plot_",id),
             height = "350px"
           ),
+
+          if (q$type == "text") {
+            plotOutput(paste0("wordcloud_", id), height = "420px")
+          },
 
           tags$details(
             style = "margin:12px 0;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;",
@@ -1020,6 +1049,34 @@ shinyServer(function(input, output, session){
           )
 
         })
+
+        if (q$type == "text") {
+          output[[paste0("wordcloud_", qid)]] <- renderPlot({
+
+            d <- subset(ans, question_id == qid)
+            tokens <- word_tokens(d$answer_text)
+
+            if (length(tokens) == 0) {
+              plot.new()
+              text(0.5, 0.5, "ワードクラウドに表示できる回答がありません。")
+              return()
+            }
+
+            counts <- sort(table(tokens), decreasing = TRUE)
+            par(family = "jp", mar = c(0, 0, 2, 0))
+            wordcloud(
+              words = names(counts),
+              freq = as.numeric(counts),
+              min.freq = 1,
+              random.order = FALSE,
+              rot.per = 0.12,
+              colors = c("#287565", "#2C7FB8", "#D95F0E", "#7570B3", "#59A14F"),
+              family = "jp"
+            )
+            title("自由記述のワードクラウド", family = "jp")
+
+          })
+        }
 
         #---------------------
         # 表

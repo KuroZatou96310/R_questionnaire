@@ -6,6 +6,7 @@ source("db.R")
 shinyServer(function(input, output, session){
 
   survey_questions <- reactiveVal(NULL)
+  submitted <- reactiveVal(FALSE)
 
   load_survey <- function(id) {
     qs <- load_questions(id)
@@ -17,7 +18,15 @@ shinyServer(function(input, output, session){
       return(FALSE)
     }
 
+    random_start <- load_random_start(id)
+    if (!is.null(random_start) && random_start >= 1 && random_start <= length(qs)) {
+      fixed <- if (random_start > 1) qs[seq_len(random_start - 1)] else list()
+      randomized <- qs[seq.int(random_start, length(qs))]
+      qs <- c(fixed, randomized[sample(seq_along(randomized))])
+    }
+
     survey_questions(qs)
+    submitted(FALSE)
     TRUE
   }
 
@@ -42,6 +51,14 @@ shinyServer(function(input, output, session){
   })
 
   output$question_ui <- renderUI({
+    if (isTRUE(submitted())) {
+      return(div(
+        class = "completion-card",
+        h2("アンケートの回答を終了しました"),
+        p("ご回答ありがとうございました。")
+      ))
+    }
+
     qs <- survey_questions()
     req(qs)
 
@@ -95,6 +112,8 @@ shinyServer(function(input, output, session){
     showNotification(
       "回答を送信しました"
     )
+
+    submitted(TRUE)
 
   })
 

@@ -2,6 +2,110 @@ library(shiny)
 library(qrcode)
 source("db.R")
 
+likert_preset_questions <- function(items, max_score = 5, prefix = "") {
+  lapply(seq_along(items), function(i) list(
+    title = paste0(prefix, items[[i]]),
+    desc = paste0("1〜", max_score, "で回答してください。"),
+    type = "single",
+    options = as.character(seq_len(max_score)),
+    min = NULL,
+    max = NULL
+  ))
+}
+
+standard_presets <- list(
+  SUS = list(
+    title = "SUS（System Usability Scale）",
+    questions = likert_preset_questions(c(
+      "頻繁にこのシステムを使いたいと思う。",
+      "このシステムは不必要に複雑だと感じた。",
+      "このシステムは使いやすいと思った。",
+      "このシステムを使うには専門家のサポートが必要だと思う。",
+      "このシステムの機能はよく統合されていると感じた。",
+      "このシステムには一貫性がないと感じた。",
+      "多くの人がすぐに使えるようになると思う。",
+      "このシステムを使うのは非常に面倒だと感じた。",
+      "このシステムを自信を持って使えると感じた。",
+      "使い始める前に多くのことを学ぶ必要があると感じた。"
+    ), 5, "SUS ")
+  ),
+  `UMUX-Lite` = list(
+    title = "UMUX-Lite",
+    questions = likert_preset_questions(c(
+      "このシステムの機能は、私の要求を満たしている。",
+      "このシステムは使いやすい。"
+    ), 7, "UMUX-Lite ")
+  ),
+  UEQ = list(
+    title = "UEQ（全26項目）",
+    questions = likert_preset_questions(c(
+      "煩わしい — 楽しい", "理解しにくい — 理解しやすい", "創造的でない — 創造的な",
+      "学びにくい — 学びやすい", "価値がない — 価値がある", "退屈な — 刺激的な",
+      "面白くない — 面白い", "予測できない — 予測できる", "遅い — 速い",
+      "独創的でない — 独創的な", "妨げになる — 支援してくれる", "悪い — 良い",
+      "複雑な — 簡単な", "好ましくない — 好ましい", "一般的な — 先進的な",
+      "不快な — 快適な", "安全でない — 安全な", "やる気を起こさせない — やる気を起こさせる",
+      "期待に合わない — 期待に合う", "非効率的な — 効率的な", "わかりにくい — わかりやすい",
+      "実用的でない — 実用的な", "整理されていない — 整理された",
+      "魅力的でない — 魅力的な", "親しみにくい — 親しみやすい", "保守的な — 革新的な"
+    ), 7, "UEQ ")
+  ),
+  `UEQ-S` = list(
+    title = "UEQ-S（短縮版）",
+    questions = likert_preset_questions(c(
+      "妨げになる — 支援してくれる",
+      "複雑な — 簡単な",
+      "退屈な — 面白い",
+      "典型的な — 斬新な",
+      "不快な — 快適な",
+      "保守的な — 革新的な",
+      "遅い — 速い",
+      "わかりにくい — わかりやすい"
+    ), 7, "UEQ-S ")
+  ),
+  `NASA-TLX` = list(
+    title = "NASA-TLX",
+    questions = lapply(c("知的・知覚的要求", "身体的要求", "時間的切迫感", "作業達成度", "努力", "不満・ストレス"), function(item) list(
+      title = paste0("NASA-TLX：", item),
+      desc = "0（低い）〜100（高い）で回答してください。",
+      type = "slider", options = NULL, min = 0, max = 100
+    ))
+  ),
+  TAM = list(
+    title = "TAM（Technology Acceptance Model）",
+    questions = likert_preset_questions(c(
+      "このシステムを使うことで作業の成果が向上する。",
+      "このシステムは作業に役立つ。",
+      "このシステムを使うことで作業が早くなる。",
+      "このシステムの操作方法を身につけるのは簡単だ。",
+      "このシステムは柔軟に操作できる。",
+      "このシステム全体として使いやすい。"
+    ), 7, "TAM ")
+  ),
+  GEQ = list(
+    title = "GEQ（ゲーム体験質問紙の一般的評価項目）",
+    questions = likert_preset_questions(c(
+      "この体験は楽しかった。",
+      "この体験に夢中になった。",
+      "この体験に満足した。",
+      "もう一度この体験をしたい。",
+      "この体験は緊張を感じさせた。"
+    ), 5, "GEQ ")
+  ),
+  IMI = list(
+    title = "IMI（Intrinsic Motivation Inventory）",
+    questions = likert_preset_questions(c(
+      "この活動は楽しかった。",
+      "この活動は面白かった。",
+      "この活動は自分にとって重要だった。",
+      "この活動に努力した。",
+      "この活動を自分で選んでいると感じた。",
+      "この活動に自信を持って取り組めた。",
+      "この活動に集中できた。"
+    ), 7, "IMI ")
+  )
+)
+
 # Define server logic required to draw a histogram
 shinyServer(function(input, output, session) {
   
@@ -43,7 +147,30 @@ shinyServer(function(input, output, session) {
     store$order     <- ids
     store$questions <- qlist
     current_id(sid)
+    updateNumericInput(session, "random_start", value = load_random_start(sid))
     showNotification("アンケートを読み込みました", type = "message")
+  })
+
+  # ---------- 標準化プリセット追加 ----------
+  observeEvent(input$add_preset, {
+
+    preset <- standard_presets[[input$preset_name]]
+    req(preset)
+
+    qs <- store$questions
+    ids <- character(0)
+
+    for (template in preset$questions) {
+      qid <- UUIDgenerate()
+      template$id <- qid
+      qs[[qid]] <- template
+      ids <- c(ids, qid)
+    }
+
+    store$questions <- qs
+    store$order <- c(store$order, ids)
+    showNotification(paste0(preset$title, "を追加しました。保存して反映してください。"), type = "message")
+
   })
   
   # ---------- 設問追加 ----------
@@ -285,6 +412,13 @@ shinyServer(function(input, output, session) {
     if (!nzchar(sid)) sid <- paste0("survey_", UUIDgenerate())
     
     current_id(sid)
+
+    random_start <- input$random_start
+    if (is.null(random_start) || is.na(random_start) || random_start < 1 || random_start > length(store$order)) {
+      random_start <- NULL
+    } else {
+      random_start <- as.integer(random_start)
+    }
     
     tryCatch({
       # SQLiteに保存
@@ -292,7 +426,8 @@ shinyServer(function(input, output, session) {
         survey_id = sid,
         password_hash = hash_pw(input$survey_pw),
         questions_list = store$questions,
-        question_ids = store$order
+        question_ids = store$order,
+        random_start = random_start
       )
       
       # FIX: 自動生成IDをUIに反映してユーザーが確認できるようにする

@@ -52,6 +52,11 @@ init_db <- function() {
     )
   ")
 
+  survey_columns <- dbGetQuery(con, "PRAGMA table_info(surveys)")$name
+  if (!("random_start" %in% survey_columns)) {
+    try(dbExecute(con, "ALTER TABLE surveys ADD COLUMN random_start INTEGER"), silent = TRUE)
+  }
+
   # questions
   dbExecute(con, "
     CREATE TABLE IF NOT EXISTS questions (
@@ -228,7 +233,8 @@ save_db <- function(
   survey_id,
   password_hash,
   questions_list,
-  question_ids
+  question_ids,
+  random_start = NULL
 ) {
 
   init_db()
@@ -257,28 +263,35 @@ save_db <- function(
     list(survey_id)
   )
 
+  existing_question_ids <- character(0)
+
   if (existing$cnt > 0) {
 
-    dbExecute(
+    existing_question_ids <- dbGetQuery(
       con,
-      "
-      DELETE FROM questions
-      WHERE survey_id = ?
-      ",
+      "SELECT question_id FROM questions WHERE survey_id = ?",
       list(survey_id)
-    )
+    )$question_id
+
+    removed_question_ids <- setdiff(existing_question_ids, question_ids)
+    for (removed_id in removed_question_ids) {
+      dbExecute(con, "DELETE FROM answers WHERE question_id = ?", list(removed_id))
+      dbExecute(con, "DELETE FROM questions WHERE survey_id = ? AND question_id = ?", list(survey_id, removed_id))
+    }
 
     dbExecute(
       con,
       "
       UPDATE surveys
       SET password_hash = ?,
-          updated_at = ?
+          updated_at = ?,
+          random_start = ?
       WHERE survey_id = ?
       ",
       list(
         password_hash,
         created_at,
+        if (is.null(random_start)) NA_integer_ else as.integer(random_start),
         survey_id
       )
     )
@@ -293,18 +306,20 @@ save_db <- function(
         survey_id,
         password_hash,
         created_at,
-        updated_at
+        updated_at,
+        random_start
       )
       VALUES
       (
-        ?, ?, ?, ?
+        ?, ?, ?, ?, ?
       )
       ",
       list(
         survey_id,
         password_hash,
         created_at,
-        created_at
+        created_at,
+        if (is.null(random_start)) NA_integer_ else as.integer(random_start)
       )
     )
 
@@ -327,10 +342,11 @@ save_db <- function(
       )
     }
 
-    dbExecute(
-      con,
-      "
-      INSERT INTO questions
+    if (!(qid %in% existing_question_ids)) {
+      dbExecute(
+        con,
+        "
+        INSERT INTO questions
       (
         question_id,
         survey_id,
@@ -346,25 +362,60 @@ save_db <- function(
       (
         ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
-      ",
-      list(
-        qid,
-        survey_id,
-        q$title,
-        q$desc,
-        q$type,
-        i - 1,
-        options_json,
-        if (is.null(q$min))
-          NA_real_ else q$min,
-        if (is.null(q$max))
-          NA_real_ else q$max
+        ",
+        list(
+          qid,
+          survey_id,
+          q$title,
+          q$desc,
+          q$type,
+          i - 1,
+          options_json,
+          if (is.null(q$min)) NA_real_ else q$min,
+          if (is.null(q$max)) NA_real_ else q$max
+        )
       )
-    )
+    } else {
+      dbExecute(
+        con,
+        "
+        UPDATE questions
+        SET title = ?, description = ?, type = ?, order_index = ?,
+            options_json = ?, min_value = ?, max_value = ?
+        WHERE survey_id = ? AND question_id = ?
+        ",
+        list(
+          q$title,
+          q$desc,
+          q$type,
+          i - 1,
+          options_json,
+          if (is.null(q$min)) NA_real_ else q$min,
+          if (is.null(q$max)) NA_real_ else q$max,
+          survey_id,
+          qid
+        )
+      )
+    }
 
   }
 
   TRUE
+}
+
+load_random_start <- function(survey_id) {
+
+  init_db()
+  con <- dbConnect(SQLite(), DB_FILE)
+  on.exit(dbDisconnect(con), add = TRUE)
+
+  value <- dbGetQuery(
+    con,
+    "SELECT random_start FROM surveys WHERE survey_id = ?",
+    params = list(survey_id)
+  )
+
+  if (nrow(value) == 0 || is.na(value$random_start[1])) NULL else as.integer(value$random_start[1])
 }
 
 # 保存済み設問の選択肢だけを追加更新する
