@@ -84,7 +84,7 @@ with_db <- function(code) {
   ensure_db()
   con <- connect_db()
   on.exit(dbDisconnect(con), add = TRUE)
-  eval(substitute(code), envir = environment())
+  eval(substitute(code), envir = list2env(list(con = con), parent = parent.frame()))
 }
 
 hash_pw <- function(pw) digest(pw, algo = "sha256", serialize = FALSE)
