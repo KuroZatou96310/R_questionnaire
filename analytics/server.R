@@ -8,7 +8,7 @@ try(Sys.setlocale("LC_CTYPE", "C.UTF-8"), silent = TRUE)
 font_add("jp", "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc")
 showtext_auto()
 
-source("../common/db.R")
+source("db.R")
 
 analysis_theme <- function() {
   theme_minimal(base_family = "jp", base_size = 13) +
