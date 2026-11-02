@@ -7,21 +7,91 @@
   let dropTarget = null;
   let dropMode = null;
   let dropAfter = false;
+  let dropIndicator = null;
   const root = () => document.getElementById('question_list_ui');
 
   function clearMarks() {
-    document.querySelectorAll('.drop-before,.drop-after,.drop-group,.drop-group-target,.drop-target').forEach((el) => {
-      el.classList.remove('drop-before', 'drop-after', 'drop-group', 'drop-group-target', 'drop-target');
+    document.querySelectorAll('.drop-group-target,.drop-target').forEach((element) => {
+      element.classList.remove('drop-group-target', 'drop-target');
     });
+    dropIndicator?.remove();
+    dropIndicator = null;
   }
 
   function resetDrag() {
-    if (draggedQuestion) draggedQuestion.classList.remove('dragging');
+    draggedQuestion?.classList.remove('dragging');
     draggedQuestion = null;
     sourceGroup = null;
     dropTarget = null;
     dropMode = null;
     clearMarks();
+  }
+
+  function setDropTarget(target, mode, after = false) {
+    if (target !== dropTarget || mode !== dropMode || after !== dropAfter) clearMarks();
+    dropTarget = target;
+    dropMode = mode;
+    dropAfter = after;
+  }
+
+  function showInsertionPosition(list, clientY) {
+    if (!dropIndicator || dropIndicator.parentElement !== list) {
+      dropIndicator?.remove();
+      dropIndicator = document.createElement('div');
+      dropIndicator.className = 'drop-position-indicator';
+      list.appendChild(dropIndicator);
+    }
+    const listRect = list.getBoundingClientRect();
+    dropIndicator.style.top = `${clientY - listRect.top + list.scrollTop - list.clientTop}px`;
+  }
+
+  // Dragover と drop の両方で同じ座標判定を行い、表示位置と確定位置を揃える。
+  function updateDropTarget(event) {
+    const output = root();
+    if (!draggedQuestion || !output) return false;
+
+    const hovered = document.elementFromPoint(event.clientX, event.clientY);
+    const insertButton = hovered?.closest('.insert-question-button');
+    const question = hovered?.closest('.question-card');
+    const group = hovered?.closest('.group-card');
+    let list = hovered?.closest('.question-list');
+
+    if (insertButton && list && output.contains(insertButton)) {
+      setDropTarget(insertButton, 'insert-gap');
+      insertButton.classList.add('drop-target');
+      if (list.closest('.group-card') !== sourceGroup) list.closest('.group-card').classList.add('drop-group-target');
+      const rect = insertButton.getBoundingClientRect();
+      showInsertionPosition(list, rect.top + rect.height / 2);
+      return true;
+    }
+
+    if (question && question !== draggedQuestion && output.contains(question)) {
+      const targetGroup = question.closest('.group-card');
+      const rect = question.getBoundingClientRect();
+      const after = event.clientY >= rect.top + rect.height / 2;
+      const mode = targetGroup === sourceGroup ? 'reorder-question' : 'join-group';
+      setDropTarget(question, mode, after);
+      if (mode === 'join-group') {
+        targetGroup.classList.add('drop-group-target');
+      }
+      list = targetGroup.querySelector(':scope > .question-list');
+      showInsertionPosition(list, after ? rect.bottom : rect.top);
+      return true;
+    }
+
+    if (group && output.contains(group) && group !== sourceGroup) {
+      list = group.querySelector(':scope > .question-list');
+      if (list) {
+        setDropTarget(list, 'join-group');
+        group.classList.add('drop-group-target');
+        const listRect = list.getBoundingClientRect();
+        showInsertionPosition(list, listRect.top + list.clientTop + list.clientHeight);
+        return true;
+      }
+    }
+
+    setDropTarget(null, null);
+    return false;
   }
 
   function sendLayout() {
@@ -33,6 +103,23 @@
         .map((question) => question.dataset.questionId)
     }));
     Shiny.setInputValue('group_layout', JSON.stringify(layout), { priority: 'event' });
+  }
+
+  function insertAtTarget(question) {
+    if (dropMode === 'insert-gap') {
+      const list = dropTarget.closest('.question-list');
+      const nextQuestion = dropTarget.nextElementSibling?.matches('.question-card')
+        ? dropTarget.nextElementSibling
+        : null;
+      if (nextQuestion !== question) list.insertBefore(question, nextQuestion);
+      return;
+    }
+
+    if (dropMode === 'reorder-question' || dropMode === 'join-group') {
+      const list = dropTarget.closest('.question-list');
+      const reference = dropAfter ? dropTarget.nextSibling : dropTarget;
+      if (reference !== question) list.insertBefore(question, reference);
+    }
   }
 
   function removeEmptyGroup(group) {
@@ -50,94 +137,23 @@
   });
 
   document.addEventListener('dragover', (event) => {
-    const output = root();
-    if (!draggedQuestion || !output) return;
-
-    const targetQuestion = event.target.closest('.question-card');
-    const targetList = event.target.closest('.question-list');
-    const targetInsert = event.target.closest('.insert-question-button');
-    if (targetInsert && targetList && output.contains(targetInsert)) {
-      event.preventDefault();
-      clearMarks();
-      dropTarget = targetInsert;
-      dropMode = 'insert-gap';
-      targetInsert.classList.add('drop-target');
-      const targetGroup = targetList.closest('.group-card');
-      if (targetGroup !== sourceGroup) targetGroup.classList.add('drop-group-target');
-      return;
-    }
-
-    if (targetQuestion && targetQuestion !== draggedQuestion && output.contains(targetQuestion)) {
-      event.preventDefault();
-      dropTarget = targetQuestion;
-      const targetGroup = targetQuestion.closest('.group-card');
-      const rect = targetQuestion.getBoundingClientRect();
-      const ratio = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
-      dropAfter = ratio >= 0.5;
-      clearMarks();
-
-      if (targetGroup === sourceGroup) {
-        dropMode = 'reorder-question';
-        targetQuestion.classList.add(dropAfter ? 'drop-after' : 'drop-before');
-      } else {
-        dropMode = 'join-group';
-        targetGroup.classList.add('drop-group-target');
-      }
-      targetQuestion.classList.add(dropAfter ? 'drop-after' : 'drop-before');
-      return;
-    }
-
-    if (targetList && output.contains(targetList) && targetList.closest('.group-card') !== sourceGroup) {
-      event.preventDefault();
-      dropTarget = targetList;
-      dropMode = 'join-group';
-      clearMarks();
-      targetList.classList.add('drop-target');
-      targetList.closest('.group-card').classList.add('drop-group-target');
-      return;
-    }
-
-    dropTarget = null;
-    dropMode = null;
-    clearMarks();
+    if (!draggedQuestion) return;
+    if (updateDropTarget(event)) event.preventDefault();
   });
 
   document.addEventListener('drop', (event) => {
-    if (!draggedQuestion || !dropMode || !dropTarget) return;
-    event.preventDefault();
-    const question = draggedQuestion;
-    const oldGroup = sourceGroup;
-    const targetGroup = dropTarget.matches('.question-list')
-      ? dropTarget.closest('.group-card')
-      : dropTarget.closest('.group-card');
-
-    if (dropMode === 'insert-gap') {
-      const list = dropTarget.closest('.question-list');
-      const nextQuestion = dropTarget.nextElementSibling?.matches('.question-card')
-        ? dropTarget.nextElementSibling
-        : null;
-      if (nextQuestion !== question) list.insertBefore(question, nextQuestion);
-      removeEmptyGroup(oldGroup);
-    } else if (dropMode === 'reorder-question') {
-      const reference = dropAfter ? dropTarget.nextSibling : dropTarget;
-      if (reference !== question) dropTarget.parentElement.insertBefore(question, reference);
-    } else if (dropMode === 'join-group') {
-      const list = targetGroup.querySelector('.question-list');
-      if (dropTarget.matches('.question-card')) {
-        const reference = dropAfter ? dropTarget.nextSibling : dropTarget;
-        if (reference !== question) list.insertBefore(question, reference);
-      } else {
-        list.appendChild(question);
-      }
-      removeEmptyGroup(oldGroup);
+    if (!draggedQuestion) return;
+    if (!updateDropTarget(event) || !dropTarget || !dropMode) {
+      resetDrag();
+      return;
     }
-
+    event.preventDefault();
+    const oldGroup = sourceGroup;
+    insertAtTarget(draggedQuestion);
+    removeEmptyGroup(oldGroup);
     resetDrag();
     sendLayout();
   });
 
   document.addEventListener('dragend', resetDrag);
-  document.addEventListener('drop', (event) => {
-    if (!root()?.contains(event.target)) resetDrag();
-  });
 })();

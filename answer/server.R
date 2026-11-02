@@ -22,26 +22,7 @@ shinyServer(function(input, output, session){
       return(FALSE)
     }
 
-    random_start <- load_random_start(id)
-    if (length(groups) == 1 && !is.null(random_start) && random_start >= 1 && random_start <= length(qs)) {
-      fixed <- if (random_start > 1) qs[seq_len(random_start - 1)] else list()
-      randomized <- qs[seq.int(random_start, length(qs))]
-      qs <- c(fixed, randomized[sample(seq_along(randomized))])
-    }
-
-    for (group_id in names(groups)) {
-      group_questions <- names(qs)[vapply(qs, function(q) identical(q$group_id, group_id), logical(1))]
-      settings <- groups[[group_id]]$settings
-      if (isTRUE(settings$randomize_questions) && length(group_questions) > 1) {
-        other_ids <- setdiff(names(qs), group_questions)
-        qs <- c(qs[other_ids], qs[sample(group_questions)])
-      }
-      for (question_id in group_questions) {
-        if (isTRUE(qs[[question_id]]$settings$randomize_choices) && length(qs[[question_id]]$options) > 1) {
-          qs[[question_id]]$options <- sample(qs[[question_id]]$options)
-        }
-      }
-    }
+    qs <- randomize_survey_questions(qs, groups)
 
     survey_groups(groups)
     survey_questions(qs)

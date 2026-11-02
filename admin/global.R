@@ -9,6 +9,37 @@ insert_question_button <- function(payload) {
   )
 }
 
+clone_survey_state <- function(questions, question_order, groups, group_order) {
+  question_ids <- names(questions)
+  group_ids <- names(groups)
+  question_map <- setNames(vapply(question_ids, function(id) uuid::UUIDgenerate(), character(1)), question_ids)
+  group_map <- setNames(vapply(group_ids, function(id) uuid::UUIDgenerate(), character(1)), group_ids)
+
+  cloned_questions <- lapply(question_ids, function(old_id) {
+    question <- questions[[old_id]]
+    question$id <- unname(question_map[[old_id]])
+    question$group_id <- unname(group_map[[question$group_id]])
+    question
+  })
+  names(cloned_questions) <- unname(question_map[question_ids])
+
+  cloned_groups <- lapply(group_ids, function(old_id) {
+    group <- groups[[old_id]]
+    group$id <- unname(group_map[[old_id]])
+    condition_id <- group$settings$visibility$question_id
+    if (!is.null(condition_id)) group$settings$visibility$question_id <- unname(question_map[[condition_id]])
+    group
+  })
+  names(cloned_groups) <- unname(group_map[group_ids])
+
+  list(
+    questions = cloned_questions,
+    order = unname(question_map[question_order]),
+    groups = cloned_groups,
+    group_order = unname(group_map[group_order])
+  )
+}
+
 question_options_ui <- function(question_id, question) {
   settings <- question$settings
   if (is.null(settings)) settings <- list()

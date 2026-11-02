@@ -26,17 +26,6 @@ shinyUI(fluidPage(
       helpText("選択した質問群を現在の設問一覧の末尾へ追加します。"),
       hr(),
 
-      h4("質問順序のランダム化"),
-      numericInput(
-        "random_start",
-        "X番目以降の設問をランダム化",
-        value = NA,
-        min = 1,
-        step = 1
-      ),
-      helpText("単一グループでは指定番号より前を固定し、それ以降を並べ替えます。複数グループでは各グループの設定を使います。"),
-      hr(),
-      
       actionButton("save_survey", "アンケートを保存",
                    style = "color:white;background:#0072B2;width:100%;font-weight:bold;")
     ),
