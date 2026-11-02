@@ -1,6 +1,6 @@
 library(shiny)
 library(qrcode)
-source("../common/db.R")
+source("db.R")
 
 likert_preset_questions <- function(items, max_score = 5, prefix = "") {
   lapply(seq_along(items), function(i) list(
