@@ -23,19 +23,8 @@ answer_question_ui <- function(q) {
       date_input$children[[2]]$attribs$placeholder <- "日付を選択"
       date_input
     },
-    info     = NULL,
     NULL
   )
-
-  if (q$type == "info") {
-    return(div(
-      class = "question-card question-info-card",
-      div(class = "question-title", q$title),
-      if (!is.null(q$desc) && length(q$desc) && !is.na(q$desc) && nzchar(q$desc)) {
-        div(class = "question-description", q$desc)
-      }
-    ))
-  }
 
   div(
     class = "question-card",

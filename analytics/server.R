@@ -150,27 +150,33 @@ shinyServer(function(input, output, session){
 
         q <- qs[[id]]
 
-        if (identical(q$type, "info")) {
-          tagList(
-            hr(), h3(q$title),
-            p(q$desc),
-            tags$span("説明専用の設問（回答入力なし）", class = "text-muted")
+        tagList(
+
+          hr(),
+
+          h3(q$title),
+
+          p(q$desc),
+
+          plotOutput(
+            paste0("plot_",id),
+            height = "350px"
+          ),
+
+          if (q$type == "text") {
+            plotOutput(paste0("wordcloud_", id), height = "420px")
+          },
+
+          tags$details(
+            style = "margin:12px 0;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;",
+            tags$summary(
+              "▼ 回答件数一覧・統計値",
+              style = "cursor:pointer;padding:10px 12px;background:#f1f5f9;font-weight:600;color:#1e293b;"
+            ),
+            tableOutput(paste0("table_", id))
           )
-        } else {
-          tagList(
-            hr(), h3(q$title), p(q$desc),
-            plotOutput(paste0("plot_",id), height = "350px"),
-            if (q$type == "text") plotOutput(paste0("wordcloud_", id), height = "420px"),
-            tags$details(
-              style = "margin:12px 0;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;",
-              tags$summary(
-                "▼ 回答件数一覧・統計値",
-                style = "cursor:pointer;padding:10px 12px;background:#f1f5f9;font-weight:600;color:#1e293b;"
-              ),
-              tableOutput(paste0("table_", id))
-            )
-          )
-        }
+
+        )
 
       })
 
@@ -603,17 +609,10 @@ shinyServer(function(input, output, session){
     plot_data$group <- factor(plot_data$group)
     plot_data$category <- factor(plot_data$category)
 
-    category_levels <- levels(plot_data$category)
-    category_colors <- grDevices::hcl.colors(
-      max(length(category_levels), 3),
-      palette = "Dynamic"
-    )[seq_along(category_levels)]
-    names(category_colors) <- category_levels
-
     ggplot(plot_data, aes(x = group, y = count, fill = category)) +
       geom_col(position = "fill", width = 0.72, color = "white") +
       scale_y_continuous(labels = function(x) paste0(round(x * 100), "%")) +
-      scale_fill_manual(values = category_colors, drop = FALSE, name = fill_label) +
+      scale_fill_brewer(palette = "Set2", name = fill_label) +
       labs(x = x_label, y = "構成比") +
       analysis_theme() +
       theme(axis.text.x = element_text(angle = 20, hjust = 1))
@@ -1045,12 +1044,6 @@ shinyServer(function(input, output, session){
                 "自由記述は下表を参照"
               )
 
-            },
-
-            info = {
-              plot.new()
-              text(0.5, 0.5, "説明専用の設問", family = "jp")
-
             }
 
           )
@@ -1103,7 +1096,7 @@ shinyServer(function(input, output, session){
             single = {
 
               tb <- as.data.frame(
-                table(factor(d$answer_text, levels = as.character(unlist(q$options))), useNA = "no")
+                table(d$answer_text)
               )
 
               names(tb) <- c(
@@ -1118,7 +1111,7 @@ shinyServer(function(input, output, session){
             select = {
 
               tb <- as.data.frame(
-                table(factor(d$answer_text, levels = as.character(unlist(q$options))), useNA = "no")
+                table(d$answer_text)
               )
 
               names(tb) <- c(
@@ -1316,3 +1309,5 @@ shinyServer(function(input, output, session){
   )
 
 })
+
+

@@ -2,10 +2,10 @@ library(shiny)
 library(qrcode)
 source("db.R")
 
-likert_preset_questions <- function(items, max_score = 5, instruction = NULL) {
+likert_preset_questions <- function(items, max_score = 5, prefix = "") {
   lapply(seq_along(items), function(i) list(
-    title = items[[i]],
-    desc = if (is.null(instruction)) paste0("1〜", max_score, "で回答してください。") else instruction,
+    title = paste0(prefix, items[[i]]),
+    desc = paste0("1〜", max_score, "で回答してください。"),
     type = "single",
     options = as.character(seq_len(max_score)),
     min = NULL,
@@ -27,14 +27,14 @@ standard_presets <- list(
       "このシステムを使うのは非常に面倒だと感じた。",
       "このシステムを自信を持って使えると感じた。",
       "使い始める前に多くのことを学ぶ必要があると感じた。"
-    ), 5, "1 = 全くそう思わない、3 = どちらともいえない、5 = 非常にそう思う。")
+    ), 5, "SUS ")
   ),
   `UMUX-Lite` = list(
     title = "UMUX-Lite",
     questions = likert_preset_questions(c(
       "このシステムの機能は、私の要求を満たしている。",
       "このシステムは使いやすい。"
-    ), 7, "1 = 全くそう思わない、4 = どちらともいえない、7 = 非常にそう思う。")
+    ), 7, "UMUX-Lite ")
   ),
   UEQ = list(
     title = "UEQ（全26項目）",
@@ -48,7 +48,7 @@ standard_presets <- list(
       "期待に合わない — 期待に合う", "非効率的な — 効率的な", "わかりにくい — わかりやすい",
       "実用的でない — 実用的な", "整理されていない — 整理された",
       "魅力的でない — 魅力的な", "親しみにくい — 親しみやすい", "保守的な — 革新的な"
-    ), 7, "1 = 左側の表現に非常に近い、4 = どちらともいえない、7 = 右側の表現に非常に近い。")
+    ), 7, "UEQ ")
   ),
   `UEQ-S` = list(
     title = "UEQ-S（短縮版）",
@@ -61,12 +61,12 @@ standard_presets <- list(
       "保守的な — 革新的な",
       "遅い — 速い",
       "わかりにくい — わかりやすい"
-    ), 7, "1 = 左側の表現に非常に近い、4 = どちらともいえない、7 = 右側の表現に非常に近い。")
+    ), 7, "UEQ-S ")
   ),
   `NASA-TLX` = list(
     title = "NASA-TLX",
     questions = lapply(c("知的・知覚的要求", "身体的要求", "時間的切迫感", "作業達成度", "努力", "不満・ストレス"), function(item) list(
-      title = item,
+      title = paste0("NASA-TLX：", item),
       desc = "0（低い）〜100（高い）で回答してください。",
       type = "slider", options = NULL, min = 0, max = 100
     ))
@@ -80,7 +80,7 @@ standard_presets <- list(
       "このシステムの操作方法を身につけるのは簡単だ。",
       "このシステムは柔軟に操作できる。",
       "このシステム全体として使いやすい。"
-    ), 7, "1 = 全くそう思わない、4 = どちらともいえない、7 = 非常にそう思う。")
+    ), 7, "TAM ")
   ),
   GEQ = list(
     title = "GEQ（ゲーム体験質問紙の一般的評価項目）",
@@ -90,7 +90,7 @@ standard_presets <- list(
       "この体験に満足した。",
       "もう一度この体験をしたい。",
       "この体験は緊張を感じさせた。"
-    ), 5, "1 = 全くそう思わない、3 = どちらともいえない、5 = 非常にそう思う。")
+    ), 5, "GEQ ")
   ),
   IMI = list(
     title = "IMI（Intrinsic Motivation Inventory）",
@@ -102,19 +102,8 @@ standard_presets <- list(
       "この活動を自分で選んでいると感じた。",
       "この活動に自信を持って取り組めた。",
       "この活動に集中できた。"
-    ), 7, "1 = 全くそう思わない、4 = どちらともいえない、7 = 非常にそう思う。")
+    ), 7, "IMI ")
   )
-)
-
-preset_usage <- c(
-  SUS = "システムの使いやすさを総合的に評価（10項目）",
-  `UMUX-Lite` = "機能の有用性と使いやすさを短く評価（2項目）",
-  UEQ = "製品・サービスの印象や体験品質を幅広く評価（26項目）",
-  `UEQ-S` = "UEQの短縮版。実用性と魅力を簡潔に評価（8項目）",
-  `NASA-TLX` = "作業時の負荷・努力・ストレスを評価（6項目）",
-  TAM = "システムの有用性・使いやすさ・受容意図を評価（6項目）",
-  GEQ = "ゲームや体験の楽しさ・没入感などを評価（5項目）",
-  IMI = "活動への興味・有能感・努力・価値などを評価（7項目）"
 )
 
 # Define server logic required to draw a histogram
@@ -158,16 +147,8 @@ shinyServer(function(input, output, session) {
     store$order     <- ids
     store$questions <- qlist
     current_id(sid)
-    saved_random_start <- load_random_start(sid)
-    updateCheckboxInput(session, "enable_random", value = !is.null(saved_random_start))
-    updateNumericInput(session, "random_start", value = if (is.null(saved_random_start)) 1 else saved_random_start)
+    updateNumericInput(session, "random_start", value = load_random_start(sid))
     showNotification("アンケートを読み込みました", type = "message")
-  })
-
-  output$preset_description <- renderUI({
-    key <- input$preset_name
-    if (is.null(key) || !nzchar(key) || is.null(preset_usage[[key]])) return(NULL)
-    helpText(preset_usage[[key]])
   })
 
   # ---------- 標準化プリセット追加 ----------
@@ -252,7 +233,10 @@ shinyServer(function(input, output, session) {
     qs[[id]] <- NULL
     store$questions <- qs
     store$order     <- store$order[store$order != id]
-    # DB はここでは変更しない。保存ボタン押下時に save_db が差分を反映する。
+
+    if (!is.null(current_id())) {
+      delete_question_and_answers(current_id(), id)
+    }
   })
 
   # ---------- 選択肢の改変 ----------
@@ -349,36 +333,36 @@ shinyServer(function(input, output, session) {
         div(
           style = "padding:10px;border:1px solid #ccc;margin-bottom:10px;",
           strong(q$title), br(),
-          div(style = "color:#666;white-space:pre-wrap;", q$desc),
+          span(style = "color:#666;", q$desc), br(),
           span(style = "color:#555;", paste("タイプ:", q$type)), br(),
-            if (!is.null(q$options))
-              div(style = "margin:8px 0;", paste("選択肢:", paste(unlist(q$options), collapse = ", "))),
-            if (q$type %in% c("single", "multiple", "select"))
-              actionButton(
-                paste0("edit_", id), "選択肢を改変",
-                onclick = sprintf(
-                  "Shiny.setInputValue('edit_options_qid','%s',{priority:'event'})", id)
-              ),
-            if (!is.null(q$min) && q$type == "slider")
-              div(paste0("範囲: ", q$min, "〜", q$max)),
-            div(style = "margin-top:10px;",
-              actionButton(
-                paste0("up_", id), "▲ 上",
-                onclick = sprintf(
-                  "Shiny.setInputValue('move_up','%s',{priority:'event'})", id)
-              ),
-              actionButton(
-                paste0("down_", id), "▼ 下",
-                onclick = sprintf(
-                  "Shiny.setInputValue('move_down','%s',{priority:'event'})", id)
-              ),
-              actionButton(
-                paste0("del_", id), "削除",
-                onclick = sprintf(
-                  "Shiny.setInputValue('delete_q','%s',{priority:'event'})", id),
-                style = "color:white;background:#dc2626;margin-left:10px;"
-              )
+          if (!is.null(q$options))
+            div(paste("選択肢:", paste(unlist(q$options), collapse = ", "))),
+          if (q$type %in% c("single", "multiple", "select"))
+            actionButton(
+              paste0("edit_", id), "選択肢を改変",
+              onclick = sprintf(
+                "Shiny.setInputValue('edit_options_qid','%s',{priority:'event'})", id)
+            ),
+          if (!is.null(q$min) && q$type == "slider")
+            div(paste0("範囲: ", q$min, "〜", q$max)),
+          div(
+            actionButton(
+              paste0("up_", id), "▲ 上",
+              onclick = sprintf(
+                "Shiny.setInputValue('move_up','%s',{priority:'event'})", id)
+            ),
+            actionButton(
+              paste0("down_", id), "▼ 下",
+              onclick = sprintf(
+                "Shiny.setInputValue('move_down','%s',{priority:'event'})", id)
+            ),
+            actionButton(
+              paste0("del_", id), "削除",
+              onclick = sprintf(
+                "Shiny.setInputValue('delete_q','%s',{priority:'event'})", id),
+              style = "color:white;background:red;margin-left:10px;"
             )
+          )
         )
       })
     )
@@ -394,7 +378,7 @@ shinyServer(function(input, output, session) {
         q     <- store$questions[[id]]
         label <- tags$div(
           strong(q$title),
-          tags$div(style = "color:#666;font-size:0.9em;white-space:pre-wrap;", q$desc)
+          tags$div(style = "color:#666;font-size:0.9em;", q$desc)
         )
         opts <- unlist(q$options)   # JSONから戻るlistをcharacterベクトルに
         
@@ -403,8 +387,6 @@ shinyServer(function(input, output, session) {
           "single"   = radioButtons(        paste0("p_", id), label, choices = opts),
           "multiple" = checkboxGroupInput(  paste0("p_", id), label, choices = opts),
           "select"   = selectInput(         paste0("p_", id), label, choices = opts),
-          "info"     = div(class = "question-info-preview", q$title,
-                            if (!is.null(q$desc) && length(q$desc) && !is.na(q$desc) && nzchar(q$desc)) div(q$desc)),
           "numeric"  = numericInput(        paste0("p_", id), label, value = NA),
           "text"     = textAreaInput(       paste0("p_", id), label),
           "slider"   = sliderInput(         paste0("p_", id), label,
@@ -428,29 +410,10 @@ shinyServer(function(input, output, session) {
     
     sid <- input$survey_id
     if (!nzchar(sid)) sid <- paste0("survey_", UUIDgenerate())
-
-    # 読み込み済みアンケートの ID を変更した場合は、設問 ID も全て作り直して
-    # 別アンケートとして保存する（元アンケートの設問を共有しない）。
-    old_id <- current_id()
-    if (!is.null(old_id) && !identical(sid, old_id)) {
-      if (sid %in% names(load_db())) {
-        showNotification("指定したアンケートIDは既に存在します。別のIDを指定してください。", type = "error")
-        return()
-      }
-      cloned <- lapply(store$order, function(old_qid) {
-        q <- store$questions[[old_qid]]
-        q$id <- UUIDgenerate()
-        q
-      })
-      new_order <- vapply(cloned, function(q) q$id, character(1))
-      names(cloned) <- new_order
-      store$questions <- cloned
-      store$order <- new_order
-    }
-
+    
     current_id(sid)
 
-    random_start <- if (isTRUE(input$enable_random)) input$random_start else NULL
+    random_start <- input$random_start
     if (is.null(random_start) || is.na(random_start) || random_start < 1 || random_start > length(store$order)) {
       random_start <- NULL
     } else {

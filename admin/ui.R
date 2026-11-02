@@ -16,41 +16,21 @@ shinyUI(fluidPage(
       selectInput(
         "preset_name",
         "プリセットを選択",
-        choices = c(
-          "選択してください" = "",
-          "SUS：システムの使いやすさ（10項目）" = "SUS",
-          "UMUX-Lite：有用性・使いやすさ（2項目）" = "UMUX-Lite",
-          "UEQ：体験品質の総合評価（26項目）" = "UEQ",
-          "UEQ-S：体験品質の短縮版（8項目）" = "UEQ-S",
-          "NASA-TLX：作業負荷の評価（6項目）" = "NASA-TLX",
-          "TAM：技術受容性の評価（6項目）" = "TAM",
-          "GEQ：ゲーム・体験の評価（5項目）" = "GEQ",
-          "IMI：活動への動機・興味の評価（7項目）" = "IMI"
-        )
+        choices = c("選択してください" = "", "SUS", "UMUX-Lite", "UEQ", "UEQ-S", "NASA-TLX", "TAM", "GEQ", "IMI")
       ),
-      uiOutput("preset_description"),
       actionButton("add_preset", "プリセットを設問に追加"),
-      helpText("設問タイトルにはプリセット名を付けず、各設問の説明に回答尺度の意味を表示します。"),
+      helpText("選択した質問群を現在の設問一覧の末尾へ追加します。"),
       hr(),
 
       h4("質問順序のランダム化"),
-      checkboxInput(
-        "enable_random",
-        "質問順序をランダム化する",
-        value = FALSE
+      numericInput(
+        "random_start",
+        "X番目以降の設問をランダム化",
+        value = NA,
+        min = 1,
+        step = 1
       ),
-      conditionalPanel(
-        condition = "input.enable_random === true",
-        numericInput(
-          "random_start",
-          "何番目以降をランダム化するか",
-          value = 1,
-          min = 1,
-          step = 1
-        ),
-        helpText("この番号より前は固定し、指定位置以降だけを回答者ごとに並べ替えます。")
-      ),
-      helpText("不要な場合はチェックを外したまま保存してください。"),
+      helpText("指定した番号より前の設問は固定し、それ以降を回答者ごとに並べ替えます。"),
       hr(),
       
       h4("設問を追加"),
@@ -58,7 +38,7 @@ shinyUI(fluidPage(
       textAreaInput("q_desc", "設問説明"),
       selectInput("q_type", "設問タイプ",
                   choices = c("single", "multiple", "numeric", "text",
-                              "select", "slider", "date", "info")),
+                              "select", "slider", "date")),
       conditionalPanel(
         condition = "['single','multiple','select'].includes(input.q_type)",
         textAreaInput("q_options", "選択肢（改行区切り）",

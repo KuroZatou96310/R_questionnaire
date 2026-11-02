@@ -83,7 +83,6 @@ shinyServer(function(input, output, session){
     unanswered <- character(0)
 
     for (q in qs) {
-      if (identical(q$type, "info")) next
       value <- input[[q$id]]
       has_value <- !is.null(value) && length(value) > 0 &&
         any(!is.na(value) & nzchar(trimws(as.character(value))))
