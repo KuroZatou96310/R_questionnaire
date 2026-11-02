@@ -110,10 +110,20 @@ standard_presets <- list(
 shinyServer(function(input, output, session) {
   
   # 作業中アンケート（順序付き）
-  store      <- reactiveValues(order = character(0), questions = list())
+  store <- reactiveValues(
+    order = character(0),
+    questions = list(),
+    group_order = character(0),
+    groups = list()
+  )
   current_id <- reactiveVal(NULL)
-  edit_options_target <- reactiveVal(NULL)
-  
+  editing_group <- reactiveVal(NULL)
+  editor_question_id <- reactiveVal(NULL)
+  editing_question_options <- reactiveVal(NULL)
+  editing_question_tab <- reactiveVal("options")
+  new_question_ids <- reactiveVal(character())
+
+
   # ---------- 既存アンケート読み込み ----------
   observeEvent(input$load_survey, {
     req(nzchar(input$survey_id), nzchar(input$survey_pw))
@@ -134,6 +144,7 @@ shinyServer(function(input, output, session) {
     }
     
     # SQLiteから質問を読み込む
+    groups <- load_groups(sid)
     qlist <- load_questions(sid)
     
     if (length(qlist) == 0) {
@@ -146,8 +157,13 @@ shinyServer(function(input, output, session) {
     
     store$order     <- ids
     store$questions <- qlist
+    store$groups <- groups
+    store$group_order <- names(groups)
+    editor_question_id(NULL)
+    editing_question_options(NULL)
+    editing_group(NULL)
+    new_question_ids(character())
     current_id(sid)
-    updateNumericInput(session, "random_start", value = load_random_start(sid))
     showNotification("アンケートを読み込みました", type = "message")
   })
 
@@ -162,8 +178,15 @@ shinyServer(function(input, output, session) {
 
     for (template in preset$questions) {
       qid <- UUIDgenerate()
+      group_id <- UUIDgenerate()
       template$id <- qid
+      template$group_id <- group_id
+      template$settings <- list(randomize_choices = FALSE, required = TRUE)
       qs[[qid]] <- template
+      groups <- store$groups
+      groups[[group_id]] <- list(id = group_id, title = paste0("設問グループ", length(store$group_order) + 1), settings = list(page = "group"))
+      store$groups <- groups
+      store$group_order <- c(store$group_order, group_id)
       ids <- c(ids, qid)
     }
 
@@ -172,199 +195,270 @@ shinyServer(function(input, output, session) {
     showNotification(paste0(preset$title, "を追加しました。保存して反映してください。"), type = "message")
 
   })
-  
-  # ---------- 設問追加 ----------
-  observeEvent(input$add_q, {
-    req(nzchar(input$q_title))
-    
-    qid <- UUIDgenerate()
-    
-    # 選択肢チェック
-    options <- NULL
-    if (input$q_type %in% c("single", "multiple", "select")) {
-      options <- strsplit(gsub("\r\n?", "\n", input$q_options), "\n", fixed = TRUE)[[1]]
-      options <- trimws(options)
-      options <- options[nzchar(options)]
-      if (length(options) == 0) {
-        showNotification("選択肢が必要です", type = "error")
-        return()
+
+  observeEvent(input$toggle_group_settings, {
+    group_id <- input$toggle_group_settings
+    if (identical(editing_group(), group_id)) editing_group(NULL) else editing_group(group_id)
+  })
+
+  observeEvent(input$group_layout, {
+    layout <- tryCatch(jsonlite::fromJSON(input$group_layout, simplifyVector = FALSE), error = function(e) NULL)
+    if (is.null(layout) || !length(layout)) return()
+
+    group_ids <- vapply(layout, function(group) as.character(group$group_id), character(1))
+    question_ids <- unlist(lapply(layout, function(group) unlist(group$question_ids, use.names = FALSE)), use.names = FALSE)
+    if (anyNA(group_ids) || any(!nzchar(group_ids)) || anyDuplicated(group_ids) ||
+        anyDuplicated(question_ids) || any(!nzchar(question_ids)) ||
+        any(vapply(layout, function(group) !length(unlist(group$question_ids, use.names = FALSE)), logical(1))) ||
+        length(question_ids) != length(store$order) ||
+        !setequal(question_ids, store$order)) {
+      showNotification("ドラッグ後の配置を反映できませんでした。", type = "error")
+      return()
+    }
+
+    questions <- store$questions
+    for (group in layout) {
+      group_id <- as.character(group$group_id)
+      for (question_id in unlist(group$question_ids, use.names = FALSE)) {
+        questions[[question_id]]$group_id <- group_id
       }
     }
-    
-    # スライダー範囲チェック
-    minv <- NULL; maxv <- NULL
-    if (input$q_type == "slider") {
-      minv <- input$q_min
-      maxv <- input$q_max
-      if (maxv <= minv) {
-        showNotification("上限は下限より大きくしてください", type = "error")
-        return()
+
+    groups <- store$groups
+    for (group_id in setdiff(group_ids, names(groups))) {
+      groups[[group_id]] <- list(
+        id = group_id,
+        title = paste0("設問グループ", length(groups) + 1),
+        settings = list(page = "group")
+      )
+    }
+    for (group_id in group_ids) {
+      condition <- groups[[group_id]]$settings$visibility
+      if (is.null(condition)) next
+      source_question <- questions[[condition$question_id]]
+      source_position <- if (is.null(source_question)) NA_integer_ else match(source_question$group_id, group_ids)
+      target_position <- match(group_id, group_ids)
+      if (is.na(source_position) || is.na(target_position) || source_position >= target_position) {
+        groups[[group_id]]$settings$visibility <- NULL
       }
     }
-    
-    # --- FIX: reactiveValues のリストはいったん取り出して差し替える ---
-    qs <- store$questions
-    qs[[qid]] <- list(
-      id      = qid,
-      title   = input$q_title,
-      desc    = input$q_desc,
-      type    = input$q_type,
-      options = options,
-      min     = minv,
-      max     = maxv
+
+    groups <- groups[group_ids]
+    store$group_order <- group_ids
+    store$order <- question_ids
+    store$questions <- questions
+    store$groups <- groups
+    if (!is.null(editing_group()) && !editing_group() %in% group_ids) editing_group(NULL)
+  })
+
+  observeEvent(input$save_group_settings_for, {
+    group_id <- input$save_group_settings_for
+    req(group_id, group_id %in% store$group_order)
+    has_visibility <- isTRUE(input[[paste0("group_has_visibility_", group_id)]])
+    settings <- list(
+      page = "group",
+      randomize_questions = isTRUE(input[[paste0("group_randomize_questions_", group_id)]]),
     )
-    store$questions <- qs
-    store$order     <- c(store$order, qid)
-    
-    # 入力フィールドをリセット
-    updateTextInput(    session, "q_title",   value = "")
-    updateTextAreaInput(session, "q_desc",    value = "")
-    updateTextAreaInput(session, "q_options", value = "")
-    showNotification("設問を追加しました", type = "message")
+    if (has_visibility) {
+      condition_question <- input[[paste0("group_condition_question_", group_id)]]
+      condition_value <- input[[paste0("group_condition_value_", group_id)]]
+      if (is.null(condition_question) || !nzchar(condition_value)) {
+        showNotification("表示条件に設問と回答値を指定してください。", type = "error")
+        return()
+      }
+      settings$visibility <- list(
+        question_id = condition_question,
+        operator = input[[paste0("group_condition_operator_", group_id)]],
+        value = condition_value
+      )
+    }
+    groups <- store$groups
+    groups[[group_id]]$settings <- settings
+    store$groups <- groups
+    showNotification("グループ設定を反映しました。アンケート保存で確定します。", type = "message")
   })
   
+  # ---------- 設問の挿入・編集 ----------
+  observeEvent(input$edit_question, {
+    qid <- input$edit_question
+    req(qid %in% names(store$questions))
+    editor_question_id(qid)
+    editing_question_options(qid)
+    editing_question_tab("edit")
+  })
+
+  observeEvent(input$select_question_panel_tab, {
+    values <- strsplit(input$select_question_panel_tab, "|", fixed = TRUE)[[1]]
+    req(length(values) == 2, values[1] %in% names(store$questions))
+    editor_question_id(if (values[2] == "edit") values[1] else NULL)
+    editing_question_options(values[1])
+    editing_question_tab(values[2])
+  })
+
+  observeEvent(input$insert_question, {
+    payload <- strsplit(input$insert_question, "|", fixed = TRUE)[[1]]
+    if (!length(payload) || !nzchar(payload[1])) return()
+    kind <- payload[1]
+    qid <- UUIDgenerate()
+    new_group <- kind %in% c("new", "before_group", "after_group")
+    groups <- store$groups
+    group_order <- store$group_order
+    order <- store$order
+
+    if (new_group) {
+      if (kind != "new" && (length(payload) < 2 || !payload[2] %in% group_order)) return()
+      group_id <- UUIDgenerate()
+      position <- if (kind == "before_group") match(payload[2], group_order) else if (kind == "after_group") match(payload[2], group_order) + 1 else length(group_order) + 1
+      if (is.na(position)) position <- length(group_order) + 1
+      groups[[group_id]] <- list(id = group_id, title = paste0("設問グループ", length(groups) + 1), settings = list(page = "group"))
+      group_order <- append(group_order, group_id, after = position - 1)
+      group_positions <- which(vapply(store$questions[order], function(q) identical(q$group_id, payload[2]), logical(1)))
+      insert_at <- if (kind == "before_group") {
+        if (length(group_positions)) group_positions[1] else length(order) + 1
+      } else if (kind == "after_group") {
+        if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
+      } else length(order) + 1
+    } else {
+      if (length(payload) < 2 || !payload[2] %in% group_order) return()
+      group_id <- payload[2]
+      before_id <- if (length(payload) >= 3) payload[3] else ""
+      group_positions <- which(vapply(store$questions[order], function(q) identical(q$group_id, group_id), logical(1)))
+      if (nzchar(before_id)) {
+        if (!before_id %in% order || !identical(store$questions[[before_id]]$group_id, group_id)) return()
+        insert_at <- match(before_id, order)
+      } else {
+        insert_at <- if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
+      }
+    }
+
+    questions <- store$questions
+    questions[[qid]] <- list(id = qid, group_id = group_id, title = "", desc = "", type = "text", options = NULL,
+                             settings = list(randomize_choices = FALSE, required = TRUE), min = NULL, max = NULL)
+    store$questions <- questions
+    store$order <- append(order, qid, after = insert_at - 1)
+    store$groups <- groups
+    store$group_order <- group_order
+    new_question_ids(c(new_question_ids(), qid))
+    editor_question_id(qid)
+    editing_question_options(qid)
+    editing_question_tab("edit")
+  })
+
+  observeEvent(input$save_question_edit_for, {
+    qid <- input$save_question_edit_for
+    req(qid %in% names(store$questions))
+    title <- trimws(input[[paste0("question_edit_title_", qid)]])
+    if (is.null(title) || !nzchar(title)) {
+      showNotification("設問タイトルを入力してください。", type = "error")
+      return()
+    }
+    type <- input[[paste0("question_edit_type_", qid)]]
+    options <- NULL
+    if (type %in% c("single", "multiple", "select")) {
+      option_text <- input[[paste0("question_edit_options_", qid)]]
+      options <- trimws(strsplit(gsub("\r\n?", "\n", if (is.null(option_text)) "" else option_text), "\n", fixed = TRUE)[[1]])
+      options <- options[nzchar(options)]
+      if (!length(options)) {
+        showNotification("選択肢を1つ以上入力してください。", type = "error")
+        return()
+      }
+    }
+    minv <- maxv <- NULL
+    if (type == "slider") {
+      minv <- input[[paste0("question_edit_min_", qid)]]
+      maxv <- input[[paste0("question_edit_max_", qid)]]
+      if (is.null(maxv) || maxv <= minv) {
+        showNotification("上限は下限より大きくしてください。", type = "error")
+        return()
+      }
+    }
+    questions <- store$questions
+    q <- questions[[qid]]
+    q$title <- title
+    q$desc <- input[[paste0("question_edit_desc_", qid)]]
+    q$type <- type
+    q$options <- options
+    q$min <- minv
+    q$max <- maxv
+    questions[[qid]] <- q
+    store$questions <- questions
+    new_question_ids(setdiff(new_question_ids(), qid))
+    editor_question_id(qid)
+    showNotification("設問を反映しました。アンケート保存で確定します。", type = "message")
+  })
+
+  observeEvent(input$cancel_question_edit_for, {
+    qid <- input$cancel_question_edit_for
+    if (qid %in% new_question_ids()) {
+      questions <- store$questions
+      group_id <- questions[[qid]]$group_id
+      questions[[qid]] <- NULL
+      groups <- store$groups
+      if (!any(vapply(questions, function(q) identical(q$group_id, group_id), logical(1)))) {
+        groups[[group_id]] <- NULL
+        store$group_order <- setdiff(store$group_order, group_id)
+      }
+      store$questions <- questions
+      store$order <- setdiff(store$order, qid)
+      store$groups <- groups
+      new_question_ids(setdiff(new_question_ids(), qid))
+    }
+    if (identical(editor_question_id(), qid)) editor_question_id(NULL)
+    if (identical(editing_question_options(), qid)) editing_question_options(NULL)
+  })
+
+  observeEvent(input$save_question_options_for, {
+    qid <- input$save_question_options_for
+    req(qid %in% names(store$questions))
+    questions <- store$questions
+    questions[[qid]]$settings <- list(
+      randomize_choices = isTRUE(input[[paste0("question_randomize_choices_", qid)]]),
+      required = isTRUE(input[[paste0("question_required_", qid)]])
+    )
+    if (identical(editor_question_id(), qid)) editor_question_id(NULL)
+    store$questions <- questions
+    showNotification("設問オプションを反映しました。アンケート保存で確定します。", type = "message")
+  })
+
   # ---------- 削除 ----------
   # FIX: NULL代入ではなく取り出して差し替える
   observeEvent(input$delete_q, ignoreInit = TRUE, {
     id <- input$delete_q
     req(nzchar(id))
     
+    req(id %in% names(store$questions))
+    group_id <- store$questions[[id]]$group_id
     qs <- store$questions
     qs[[id]] <- NULL
     store$questions <- qs
     store$order     <- store$order[store$order != id]
-
-    if (!is.null(current_id())) {
-      delete_question_and_answers(current_id(), id)
+    groups <- store$groups
+    group_order <- store$group_order
+    if (!any(vapply(qs, function(question) identical(question$group_id, group_id), logical(1)))) {
+      groups[[group_id]] <- NULL
+      group_order <- setdiff(group_order, group_id)
+      if (identical(editing_group(), group_id)) editing_group(NULL)
     }
+    for (group_id in store$group_order) {
+      condition <- groups[[group_id]]$settings$visibility
+      if (!is.null(condition) && identical(condition$question_id, id)) {
+        groups[[group_id]]$settings$visibility <- NULL
+      }
+    }
+    store$groups <- groups
+    store$group_order <- group_order
   })
 
-  # ---------- 選択肢の改変 ----------
-  observeEvent(input$edit_options_qid, {
-
-    qid <- input$edit_options_qid
-    req(nzchar(qid), qid %in% names(store$questions))
-
-    edit_options_target(qid)
-    showModal(modalDialog(
-      title = paste0("選択肢を改変：", store$questions[[qid]]$title),
-      textAreaInput(
-        "edit_options_text",
-        "※アンケート実施途中に選択肢を変更すると、変更前後の回答を正確に比較できず、統計分析に影響する場合があります。",
-        value = paste(as.character(unlist(store$questions[[qid]]$options)), collapse = "\n"),
-        placeholder = "例：とても満足\nやや満足",
-        rows = 8
-      ),
-      footer = tagList(
-        modalButton("キャンセル"),
-        actionButton("edit_options_save", "この内容で上書き")
-      ),
-      easyClose = TRUE
-    ))
-
-  })
-
-  observeEvent(input$edit_options_save, {
-
-    qid <- edit_options_target()
-    req(qid, qid %in% names(store$questions))
-
-    edit_text <- if (is.null(input$edit_options_text)) "" else input$edit_options_text
-    options <- strsplit(gsub("\r\n?", "\n", edit_text), "\n", fixed = TRUE)[[1]]
-    options <- unique(trimws(options))
-    options <- options[nzchar(options)]
-
-    if (length(options) == 0) {
-      showNotification("選択肢を1つ以上入力してください", type = "error")
-      return()
-    }
-
-    q <- store$questions[[qid]]
-    q$options <- options
-    qs <- store$questions
-    qs[[qid]] <- q
-    store$questions <- qs
-
-    if (!is.null(current_id()) && nzchar(input$survey_pw)) {
-      update_question_options(current_id(), qid, q$options)
-      showNotification("選択肢を改変して保存しました", type = "message")
-    } else {
-      showNotification("選択肢を改変しました。アンケートを保存してください", type = "message")
-    }
-
-    removeModal()
-
-  })
-  
-  # ---------- 上移動 ----------
-  # FIX: ベクトルをいったんコピーして差し替える
-  observeEvent(input$move_up, ignoreInit = TRUE, {
-    id  <- input$move_up
-    req(nzchar(id))
-    
-    ord <- store$order
-    idx <- which(ord == id)
-    if (length(idx) == 1 && idx > 1) {
-      ord[c(idx - 1, idx)] <- ord[c(idx, idx - 1)]
-      store$order <- ord
-    }
-  })
-  
-  # ---------- 下移動 ----------
-  observeEvent(input$move_down, ignoreInit = TRUE, {
-    id  <- input$move_down
-    req(nzchar(id))
-    
-    ord <- store$order
-    idx <- which(ord == id)
-    if (length(idx) == 1 && idx < length(ord)) {
-      ord[c(idx, idx + 1)] <- ord[c(idx + 1, idx)]
-      store$order <- ord
-    }
-  })
-  
   # ---------- 設問一覧 UI ----------
   output$question_list_ui <- renderUI({
-    if (length(store$order) == 0) return(p("まだ設問がありません。"))
-    
-    tagList(
-      lapply(store$order, function(id) {
-        q <- store$questions[[id]]
-        div(
-          style = "padding:10px;border:1px solid #ccc;margin-bottom:10px;",
-          strong(q$title), br(),
-          span(style = "color:#666;", q$desc), br(),
-          span(style = "color:#555;", paste("タイプ:", q$type)), br(),
-          if (!is.null(q$options))
-            div(paste("選択肢:", paste(unlist(q$options), collapse = ", "))),
-          if (q$type %in% c("single", "multiple", "select"))
-            actionButton(
-              paste0("edit_", id), "選択肢を改変",
-              onclick = sprintf(
-                "Shiny.setInputValue('edit_options_qid','%s',{priority:'event'})", id)
-            ),
-          if (!is.null(q$min) && q$type == "slider")
-            div(paste0("範囲: ", q$min, "〜", q$max)),
-          div(
-            actionButton(
-              paste0("up_", id), "▲ 上",
-              onclick = sprintf(
-                "Shiny.setInputValue('move_up','%s',{priority:'event'})", id)
-            ),
-            actionButton(
-              paste0("down_", id), "▼ 下",
-              onclick = sprintf(
-                "Shiny.setInputValue('move_down','%s',{priority:'event'})", id)
-            ),
-            actionButton(
-              paste0("del_", id), "削除",
-              onclick = sprintf(
-                "Shiny.setInputValue('delete_q','%s',{priority:'event'})", id),
-              style = "color:white;background:red;margin-left:10px;"
-            )
-          )
-        )
-      })
+    question_group_board_ui(
+      groups = store$groups,
+      group_order = store$group_order,
+      questions = store$questions,
+      question_order = store$order,
+      editing_group = editing_group(),
+      editing_question_options = editing_question_options(),
+      editing_question_tab = editing_question_tab()
     )
   })
   
@@ -374,24 +468,28 @@ shinyServer(function(input, output, session) {
       return(p("設問が作成されるとプレビューが表示されます。"))
     
     tagList(
-      lapply(store$order, function(id) {
-        q     <- store$questions[[id]]
-        label <- tags$div(
-          strong(q$title),
-          tags$div(style = "color:#666;font-size:0.9em;", q$desc)
-        )
-        opts <- unlist(q$options)   # JSONから戻るlistをcharacterベクトルに
-        
-        switch(
-          q$type,
-          "single"   = radioButtons(        paste0("p_", id), label, choices = opts),
-          "multiple" = checkboxGroupInput(  paste0("p_", id), label, choices = opts),
-          "select"   = selectInput(         paste0("p_", id), label, choices = opts),
-          "numeric"  = numericInput(        paste0("p_", id), label, value = NA),
-          "text"     = textAreaInput(       paste0("p_", id), label),
-          "slider"   = sliderInput(         paste0("p_", id), label,
-                                            min = q$min, max = q$max, value = q$min),
-          "date"     = dateInput(           paste0("p_", id), label, value = Sys.Date())
+      lapply(store$group_order, function(group_id) {
+        ids <- store$order[vapply(store$questions[store$order], function(q) identical(q$group_id, group_id), logical(1))]
+        tagList(
+          h3(store$groups[[group_id]]$title),
+          lapply(ids, function(id) {
+            q <- store$questions[[id]]
+            label <- tags$div(
+              strong(q$title),
+              tags$div(style = "color:#666;font-size:0.9em;", q$desc)
+            )
+            opts <- unlist(q$options)
+            switch(
+              q$type,
+              "single"   = radioButtons(paste0("p_", id), label, choices = opts),
+              "multiple" = checkboxGroupInput(paste0("p_", id), label, choices = opts),
+              "select"   = selectInput(paste0("p_", id), label, choices = opts),
+              "numeric"  = numericInput(paste0("p_", id), label, value = NA),
+              "text"     = textAreaInput(paste0("p_", id), label),
+              "slider"   = sliderInput(paste0("p_", id), label, min = q$min, max = q$max, value = q$min),
+              "date"     = dateInput(paste0("p_", id), label, value = Sys.Date())
+            )
+          })
         )
       })
     )
@@ -403,39 +501,54 @@ shinyServer(function(input, output, session) {
       showNotification("設問が1件もありません", type = "error")
       return()
     }
-    if (!nzchar(input$survey_pw)) {
+    if (is.null(input$survey_pw) || !nzchar(input$survey_pw)) {
       showNotification("パスワードを入力してください", type = "error")
       return()
     }
-    
-    sid <- input$survey_id
-    if (!nzchar(sid)) sid <- paste0("survey_", UUIDgenerate())
-    
-    current_id(sid)
 
-    random_start <- input$random_start
-    if (is.null(random_start) || is.na(random_start) || random_start < 1 || random_start > length(store$order)) {
-      random_start <- NULL
-    } else {
-      random_start <- as.integer(random_start)
+    sid <- trimws(input$survey_id)
+    if (!nzchar(sid)) sid <- paste0("survey_", UUIDgenerate())
+    previous_sid <- current_id()
+    is_copy <- !is.null(previous_sid) && nzchar(previous_sid) && !identical(previous_sid, sid)
+
+    if (is_copy && sid %in% names(load_db())) {
+      showNotification("変更先のアンケートIDはすでに使われています。", type = "error")
+      return()
     }
-    
+
     tryCatch({
-      # SQLiteに保存
+      saved_state <- if (is_copy) clone_survey_state(store$questions, store$order, store$groups, store$group_order) else list(
+        questions = store$questions,
+        order = store$order,
+        groups = store$groups,
+        group_order = store$group_order
+      )
+
       save_db(
         survey_id = sid,
         password_hash = hash_pw(input$survey_pw),
-        questions_list = store$questions,
-        question_ids = store$order,
-        random_start = random_start
+        questions_list = saved_state$questions,
+        question_ids = saved_state$order,
+        groups_list = saved_state$groups,
+        group_ids = saved_state$group_order
       )
-      
-      # FIX: 自動生成IDをUIに反映してユーザーが確認できるようにする
+
+      if (is_copy) {
+        store$questions <- saved_state$questions
+        store$order <- saved_state$order
+        store$groups <- saved_state$groups
+        store$group_order <- saved_state$group_order
+        editor_question_id(NULL)
+        editing_question_options(NULL)
+        editing_group(NULL)
+      }
+      new_question_ids(character())
+      current_id(sid)
       updateTextInput(session, "survey_id", value = sid)
-      
       showNotification(paste("保存しました（ID:", sid, ")"), type = "message")
     }, error = function(e) {
       showNotification(paste("保存エラー:", e$message), type = "error")
     })
   })
+
 })

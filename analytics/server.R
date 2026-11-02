@@ -1,7 +1,6 @@
 library(shiny)
 library(showtext)
 library(ggplot2)
-library(wordcloud)
 
 # Shiny Server の既定ロケールが C の場合でも、日本語をUTF-8として表示する
 try(Sys.setlocale("LC_CTYPE", "C.UTF-8"), silent = TRUE)
@@ -10,68 +9,11 @@ showtext_auto()
 
 source("db.R")
 
-analysis_theme <- function() {
-  theme_minimal(base_family = "jp", base_size = 13) +
-    theme(
-      plot.title = element_text(face = "bold", margin = margin(b = 14)),
-      axis.title = element_text(face = "bold"),
-      panel.grid.major.y = element_blank(),
-      panel.grid.minor = element_blank()
-    )
-}
-
-frequency_plot <- function(values, title, fill = "#2C7FB8", categories = NULL) {
-  values <- as.character(values)
-  if (!is.null(categories)) {
-    categories <- unique(as.character(categories))
-    values <- factor(values, levels = categories)
-  }
-  counts <- as.data.frame(table(values, useNA = "no"), stringsAsFactors = FALSE)
-  names(counts) <- c("answer", "count")
-  counts <- counts[counts$answer != "" & !is.na(counts$answer), , drop = FALSE]
-
-  if (nrow(counts) == 0) {
-    return(ggplot() + theme_void() +
-      annotate("text", x = 0, y = 0, label = "回答なし", family = "jp"))
-  }
-
-  ggplot(counts, aes(x = reorder(answer, count), y = count)) +
-    geom_col(fill = fill, width = 0.68) +
-    geom_text(aes(label = count), hjust = -0.2, family = "jp") +
-    coord_flip(clip = "off") +
-    labs(title = title, x = NULL, y = "回答数") +
-    expand_limits(y = max(counts$count, 0) * 1.15) +
-    analysis_theme()
-}
-
-word_tokens <- function(values) {
-  text <- paste(as.character(values), collapse = " ")
-  if (!nzchar(trimws(text))) return(character(0))
-
-  tokens <- if (requireNamespace("stringi", quietly = TRUE)) {
-    unlist(stringi::stri_split_boundaries(text, type = "word"))
-  } else {
-    chunks <- unlist(strsplit(gsub("[^[:alnum:]ぁ-んァ-ヶ一-龠]+", " ", text), "\\s+"))
-    unlist(lapply(chunks, function(chunk) {
-      chars <- strsplit(chunk, "", fixed = TRUE)[[1]]
-      if (grepl("[ぁ-んァ-ヶ一-龠]", chunk) && length(chars) >= 3) {
-        paste(chars[-length(chars)], chars[-1], sep = "")
-      } else {
-        chunk
-      }
-    }))
-  }
-
-  tokens <- trimws(tokens)
-  tokens <- tokens[nzchar(tokens) & nchar(tokens) >= 2]
-  stopwords <- c("これ", "それ", "ため", "こと", "よう", "さん", "する", "なる", "ある", "いる", "この", "その", "から", "まで")
-  tokens[!(tokens %in% stopwords)]
-}
-
 shinyServer(function(input, output, session){
 
   survey_questions <- reactiveVal(NULL)
   survey_answers   <- reactiveVal(NULL)
+  survey_response_count <- reactiveVal(0L)
 
 
   #-------------------------
@@ -111,6 +53,7 @@ shinyServer(function(input, output, session){
     survey_answers(
       load_answers(input$survey_id)
     )
+    survey_response_count(load_response_count(input$survey_id))
 
     showNotification(
       "読み込みました"
@@ -125,7 +68,7 @@ shinyServer(function(input, output, session){
 
     req(survey_answers(), filtered_answers())
 
-    total <- length(unique(survey_answers()$response_id))
+    total <- survey_response_count()
     filtered <- length(unique(filtered_answers()$response_id))
 
     paste0("対象回答数：", filtered, " / ", total)
@@ -928,314 +871,27 @@ shinyServer(function(input, output, session){
 
   })
 
-  #-------------------------
-  # グラフ・表生成
-  #-------------------------
+  # 設問ごとのグラフ・表を同じ描画関数で生成する
   observe({
-
-    req(
-      survey_questions(),
-      filtered_answers()
-    )
-
-    qs <- survey_questions()
-    ans <- filtered_answers()
-
-    for(id in names(qs)){
-
-      local({
-
-        qid <- id
-        q <- qs[[qid]]
-
-        #---------------------
-        # グラフ
-        #---------------------
-
-        output[[paste0("plot_",qid)]] <- renderPlot({
-
-          d <- subset(
-            ans,
-            question_id == qid
-          )
-
-          if(nrow(d)==0){
-
-            plot.new()
-
-            text(
-              0.5,
-              0.5,
-              "回答なし"
-            )
-
-            return()
-
-          }
-
-          switch(
-
-            q$type,
-
-            single = {
-              print(frequency_plot(d$answer_text, q$title, categories = unlist(q$options)))
-
-            },
-
-            select = {
-              print(frequency_plot(d$answer_text, q$title, categories = unlist(q$options)))
-
-            },
-
-            multiple = {
-
-              x <- unlist(
-                strsplit(
-                  d$answer_text,
-                  ","
-                )
-              )
-
-              print(frequency_plot(trimws(x), q$title, "#F28E2B", unlist(q$options)))
-
-            },
-
-            numeric = {
-
-              values <- suppressWarnings(as.numeric(d$answer_text))
-              print(
-                ggplot(data.frame(value = values), aes(x = value)) +
-                  geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
-                  stat_bin(bins = 12, geom = "text", aes(label = after_stat(count)), vjust = -0.4, family = "jp") +
-                  labs(title = q$title, x = "値", y = "回答数") +
-                  scale_y_continuous(expand = expansion(mult = c(0, 0.16))) +
-                  analysis_theme()
-              )
-
-            },
-
-            slider = {
-
-              values <- suppressWarnings(as.numeric(d$answer_text))
-              print(
-                ggplot(data.frame(value = values), aes(x = value)) +
-                  geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
-                  stat_bin(bins = 12, geom = "text", aes(label = after_stat(count)), vjust = -0.4, family = "jp") +
-                  labs(title = q$title, x = "値", y = "回答数") +
-                  scale_y_continuous(expand = expansion(mult = c(0, 0.16))) +
-                  analysis_theme()
-              )
-
-            },
-
-            date = {
-
-              print(frequency_plot(d$answer_text, q$title, "#AF7AA1", unlist(q$options)))
-
-            },
-
-            text = {
-
-              plot.new()
-
-              text(
-                0.5,
-                0.5,
-                "自由記述は下表を参照"
-              )
-
-            }
-
-          )
-
-        })
-
-        if (q$type == "text") {
-          output[[paste0("wordcloud_", qid)]] <- renderPlot({
-
-            d <- subset(ans, question_id == qid)
-            tokens <- word_tokens(d$answer_text)
-
-            if (length(tokens) == 0) {
-              plot.new()
-              text(0.5, 0.5, "ワードクラウドに表示できる回答がありません。")
-              return()
-            }
-
-            counts <- sort(table(tokens), decreasing = TRUE)
-            par(family = "jp", mar = c(0, 0, 2, 0))
-            wordcloud(
-              words = names(counts),
-              freq = as.numeric(counts),
-              min.freq = 1,
-              random.order = FALSE,
-              rot.per = 0.12,
-              colors = c("#287565", "#2C7FB8", "#D95F0E", "#7570B3", "#59A14F"),
-              family = "jp"
-            )
-            title("自由記述のワードクラウド", family = "jp")
-
-          })
-        }
-
-        #---------------------
-        # 表
-        #---------------------
-
-        output[[paste0("table_",qid)]] <- renderTable({
-
-          d <- subset(
-            ans,
-            question_id == qid
-          )
-
-          switch(
-
-            q$type,
-
-            single = {
-
-              tb <- as.data.frame(
-                table(d$answer_text)
-              )
-
-              names(tb) <- c(
-                "回答",
-                "件数"
-              )
-
-              tb
-
-            },
-
-            select = {
-
-              tb <- as.data.frame(
-                table(d$answer_text)
-              )
-
-              names(tb) <- c(
-                "回答",
-                "件数"
-              )
-
-              tb
-
-            },
-
-            multiple = {
-
-              x <- unlist(
-                strsplit(
-                  d$answer_text,
-                  ","
-                )
-              )
-
-              tb <- as.data.frame(
-                table(trimws(x))
-              )
-
-              names(tb) <- c(
-                "回答",
-                "件数"
-              )
-
-              tb
-
-            },
-
-            numeric = {
-
-              x <- as.numeric(
-                d$answer_text
-              )
-
-              data.frame(
-
-                key=c(
-                  "平均",
-                  "中央値",
-                  "最小",
-                  "最大",
-                  "標準偏差"
-                ),
-
-                value=c(
-                  mean(x,na.rm=TRUE),
-                  median(x,na.rm=TRUE),
-                  min(x,na.rm=TRUE),
-                  max(x,na.rm=TRUE),
-                  sd(x,na.rm=TRUE)
-                )
-
-              )
-
-            },
-
-            slider = {
-
-              x <- as.numeric(
-                d$answer_text
-              )
-
-              data.frame(
-
-                key=c(
-                  "平均",
-                  "中央値",
-                  "最小",
-                  "最大",
-                  "標準偏差"
-                ),
-
-                value=c(
-                  mean(x,na.rm=TRUE),
-                  median(x,na.rm=TRUE),
-                  min(x,na.rm=TRUE),
-                  max(x,na.rm=TRUE),
-                  sd(x,na.rm=TRUE)
-                )
-
-              )
-
-            },
-
-            date = {
-
-              tb <- as.data.frame(
-                table(d$answer_text)
-              )
-
-              names(tb) <- c(
-                "日付",
-                "件数"
-              )
-
-              tb
-
-            },
-
-            text = {
-
-              data.frame(
-
-                answer_text_=d$answer_text,
-
-                stringsAsFactors=FALSE
-
-              )
-
-            }
-
-          )
-
-        })
-
+    req(survey_questions(), filtered_answers())
+    questions <- survey_questions()
+    answers <- filtered_answers()
+
+    for (id in names(questions)) local({
+      question_id <- id
+      question <- questions[[id]]
+      output[[paste0("plot_", question_id)]] <- renderPlot({
+        question_plot(answers[!is.na(answers$question_id) & answers$question_id == question_id, , drop = FALSE], question)
       })
-
-    }
-
+      output[[paste0("table_", question_id)]] <- renderTable({
+        question_summary(answers[!is.na(answers$question_id) & answers$question_id == question_id, , drop = FALSE], question)
+      }, rownames = FALSE)
+      if (question$type == "text") {
+        output[[paste0("wordcloud_", question_id)]] <- renderPlot({
+          question_wordcloud(answers[!is.na(answers$question_id) & answers$question_id == question_id, , drop = FALSE])
+        })
+      }
+    })
   })
 
   #-------------------------
@@ -1295,7 +951,12 @@ shinyServer(function(input, output, session){
 
       })
 
-      exported <- do.call(rbind, exported)
+      exported <- if (length(exported)) do.call(rbind, exported) else data.frame(
+        "アンケートID" = character(), "アンケートタイトル" = character(), "アンケート説明" = character(),
+        "設問ID" = character(), "設問" = character(), "設問説明" = character(), "種類" = character(),
+        "選択肢" = character(), "最小値" = character(), "最大値" = character(), "回答ID" = character(),
+        "回答日時" = character(), "回答" = character(), check.names = FALSE
+      )
 
       con <- file(file, open = "wb")
       on.exit(close(con), add = TRUE)
