@@ -177,7 +177,8 @@ load_groups <- function(survey_id) with_db({
 
   result <- lapply(seq_len(nrow(groups)), function(i) {
     settings <- tryCatch(fromJSON(groups$settings_json[i], simplifyVector = FALSE), error = function(e) list())
-    if (is.null(settings$page)) settings$page <- "group"
+    # Page breaks are opt-in. Older rows stored "group" implicitly for every group.
+    if (is.null(settings$page) || identical(settings$page, "group")) settings$page <- FALSE
     list(id = groups$group_id[i], title = enc2utf8(groups$title[i]), settings = settings)
   })
   names(result) <- groups$group_id
@@ -225,7 +226,7 @@ save_db <- function(survey_id, password_hash, questions_list, question_ids,
   if (!length(group_ids)) {
     group_id <- UUIDgenerate()
     group_ids <- group_id
-    groups_list[[group_id]] <- list(id = group_id, title = "グループ1", settings = list(page = "group"))
+    groups_list[[group_id]] <- list(id = group_id, title = "グループ1", settings = list(page = FALSE))
     for (qid in question_ids) questions_list[[qid]]$group_id <- group_id
   }
   if (!all(group_ids %in% names(groups_list))) stop("保存対象のグループデータが不足しています。")

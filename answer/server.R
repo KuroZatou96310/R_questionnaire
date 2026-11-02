@@ -56,8 +56,20 @@ shinyServer(function(input, output, session){
     }, logical(1))]
   })
 
-  observe({
+  visible_pages <- reactive({
     ids <- visible_group_ids()
+    groups <- survey_groups()
+    pages <- list()
+    for (id in ids) {
+      starts_page <- isTRUE(groups[[id]]$settings$page)
+      if (!length(pages) || starts_page) pages[[id]] <- id
+      else pages[[length(pages)]] <- c(pages[[length(pages)]], id)
+    }
+    pages
+  })
+
+  observe({
+    ids <- names(visible_pages())
     current <- active_group()
     if (length(ids) && (is.null(current) || !current %in% ids)) active_group(ids[1])
   })
@@ -108,25 +120,29 @@ shinyServer(function(input, output, session){
     qs <- survey_questions()
     groups <- survey_groups()
     req(qs, groups)
-    group_ids <- visible_group_ids()
+    page_ids <- names(visible_pages())
     current_id <- active_group()
-    req(length(group_ids), current_id)
-    group_index <- match(current_id, group_ids)
-    group <- groups[[current_id]]
-    group_question_ids <- names(qs)[vapply(qs, function(q) identical(q$group_id, current_id), logical(1))]
-    group_question_ids <- group_question_ids[group_question_ids %in% names(qs)]
+    req(length(page_ids), current_id)
+    group_index <- match(current_id, page_ids)
+    page_group_ids <- visible_pages()[[current_id]]
 
     tagList(
       div(class = "survey-card",
         div(class = "survey-id", "回答するアンケート"),
         h2(class = "h4 mb-0", input$survey_id),
-        p(paste0("グループ ", group_index, " / ", length(group_ids)))
+        p(paste0("ページ ", group_index, " / ", length(page_ids)))
       ),
-      h3(group$title),
-      lapply(group_question_ids, function(id) answer_question_ui(qs[[id]], current_answer(id))),
+      lapply(page_group_ids, function(group_id) {
+        group_question_ids <- names(qs)[vapply(qs, function(q) identical(q$group_id, group_id), logical(1))]
+        group <- groups[[group_id]]
+        tagList(
+          if (length(page_group_ids) > 1) h3(group$title),
+          lapply(group_question_ids, function(id) answer_question_ui(qs[[id]], current_answer(id)))
+        )
+      }),
       div(class = "group-navigation",
         if (group_index > 1) actionButton("group_previous", "前へ") else NULL,
-        if (group_index < length(group_ids)) {
+        if (group_index < length(page_ids)) {
           actionButton("group_next", "次へ", class = "btn-primary")
         } else {
           actionButton("submit", "回答を送信する", class = "btn-primary answer-submit")
@@ -136,7 +152,7 @@ shinyServer(function(input, output, session){
   })
 
   observeEvent(input$group_previous, {
-    ids <- visible_group_ids()
+    ids <- names(visible_pages())
     index <- match(active_group(), ids)
     if (!is.na(index) && index > 1) active_group(ids[index - 1])
   })
@@ -144,19 +160,20 @@ shinyServer(function(input, output, session){
   observeEvent(input$group_next, {
     qs <- survey_questions()
     current_id <- active_group()
-    current_ids <- names(qs)[vapply(qs, function(q) identical(q$group_id, current_id), logical(1))]
+    current_group_ids <- visible_pages()[[current_id]]
+    current_ids <- names(qs)[vapply(qs, function(q) q$group_id %in% current_group_ids, logical(1))]
     missing_ids <- missing_questions(current_ids, qs)
     if (length(missing_ids)) {
       showModal(modalDialog(
         title = "未回答の設問",
-        p("このグループの設問に回答してください。"),
+        p("このページの設問に回答してください。"),
         tags$ul(lapply(vapply(qs[missing_ids], function(q) q$title, character(1)), tags$li)),
         easyClose = TRUE,
         footer = modalButton("戻る")
       ))
       return()
     }
-    ids <- visible_group_ids()
+    ids <- names(visible_pages())
     index <- match(current_id, ids)
     if (!is.na(index) && index < length(ids)) active_group(ids[index + 1])
   })
