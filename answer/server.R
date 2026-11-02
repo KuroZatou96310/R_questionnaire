@@ -1,7 +1,7 @@
 library(shiny)
 library(bslib)
 
-source("db.R")
+source("../common/db.R")
 
 shinyServer(function(input, output, session){
 
