@@ -1,0 +1,37 @@
+.group-board { display:flex; flex-direction:column; gap:14px; }
+.group-card { position:relative; border:0; background:transparent; }
+.group-card.multi-question-group { border:1px solid #cbd5e1; border-radius:10px; background:#f8fafc; padding:8px; }
+.group-settings-panel { padding:14px 16px; background:#fff; border-top:1px solid #cbd5e1; }
+.question-list { min-height:52px; padding:4px 0; display:flex; flex-direction:column; gap:8px; }
+.multi-question-group .question-list { padding:4px; }
+.question-list:empty:after { content:'ここに設問をドロップ'; color:#94a3b8; padding:8px; }
+.question-card { position:relative; padding:12px; border:1px solid #d1d5db; border-radius:8px; background:white; cursor:grab; }
+.question-card:active { cursor:grabbing; }
+.question-card-heading { display:flex; align-items:center; gap:8px; }
+.question-type, .group-count { color:#64748b; font-size:12px; margin-left:auto; }
+.question-number { color:#334155; font-weight:700; min-width:24px; }
+.question-description, .question-options { color:#64748b; font-size:13px; margin:6px 0 0 28px; }
+.question-actions { display:flex; gap:6px; margin:10px 0 0 28px; }
+.drag-instructions { color:#475569; margin-bottom:12px; }
+.question-card.dragging, .group-card.dragging { opacity:.45; }
+.question-list.drop-target { background:#eff6ff; outline:2px dashed #3b82f6; }
+.question-card.drop-before { box-shadow:0 -3px 0 #3b82f6; }
+.question-card.drop-after { box-shadow:0 3px 0 #3b82f6; }
+.question-card.drop-before::before, .question-card.drop-after::after { content:'ここに挿入'; position:absolute; left:50%; transform:translateX(-50%); z-index:3; padding:2px 10px; border-radius:12px; color:white; background:#2563eb; font-size:12px; line-height:18px; white-space:nowrap; }
+.question-card.drop-before::before { top:-14px; }
+.question-card.drop-after::after { bottom:-14px; }
+.group-card.drop-group-target { outline:3px solid #2563eb; outline-offset:2px; border-radius:10px; background:rgba(219,234,254,.55); box-shadow:0 0 0 5px rgba(59,130,246,.16), 0 4px 18px rgba(37,99,235,.2); }
+.group-card.drop-group-target::before { content:'既存グループに追加'; position:absolute; top:6px; right:12px; z-index:4; padding:4px 10px; border-radius:14px; color:#fff; background:#2563eb; font-size:12px; font-weight:700; pointer-events:none; }
+.drag-handle { color:#64748b; font-size:20px; }
+.insert-question-button { display:block; width:100%; height:24px; margin:-8px auto; border:0; border-radius:14px; background:transparent; color:#2563eb; font-size:20px; line-height:20px; opacity:0; cursor:pointer; transition:opacity .12s, background .12s; z-index:2; position:relative; }
+.question-card:hover + .insert-question-button, .group-card:hover + .insert-question-button, .insert-question-button:focus { opacity:1; }
+.insert-question-button:hover { background:#dbeafe; opacity:1; }
+.question-editor { padding:12px; background:#f8fafc; border:1px solid #d1d5db; border-radius:8px; }
+.question-detail-panel { margin:12px 0 0 28px; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+.question-detail-panel .form-group { margin-bottom:12px; }
+.question-actions .btn.active { color:#1d4ed8; border-color:#93c5fd; background:#eff6ff; box-shadow:inset 0 0 0 1px #bfdbfe; }
+.insert-question-button.drop-target { width:100%; height:24px; margin:-8px auto; opacity:1; color:transparent; background:transparent; border:0; border-top:3px solid #3b82f6; border-radius:0; font-size:0; outline:0; }
+.insert-question-button.drop-target::after { content:'ここに挿入'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); margin:0; padding:2px 10px; border-radius:12px; color:#fff; background:#2563eb; font-size:12px; line-height:18px; white-space:nowrap; }
+.question-list.drop-target { position:relative; }
+.question-list.drop-target::after { content:'既存グループに追加'; position:absolute; inset:8px; display:grid; place-items:center; color:#1d4ed8; font-weight:700; background:rgba(219,234,254,.78); border:2px dashed #3b82f6; border-radius:8px; pointer-events:none; }
+body:has(#save_survey) .col-sm-3 { position:sticky; top:12px; align-self:flex-start; max-height:calc(100vh - 24px); overflow-y:auto; }

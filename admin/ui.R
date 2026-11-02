@@ -2,6 +2,10 @@ library(shiny)
 
 # Define UI for application that plots random distributions 
 shinyUI(fluidPage(
+  tags$head(
+    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css"),
+    tags$script(src = "questionnaire-dnd.js")
+  ),
   titlePanel("アンケート生成アプリ（admin）"),
   
   sidebarLayout(
@@ -30,26 +34,7 @@ shinyUI(fluidPage(
         min = 1,
         step = 1
       ),
-      helpText("指定した番号より前の設問は固定し、それ以降を回答者ごとに並べ替えます。"),
-      hr(),
-      
-      h4("設問を追加"),
-      textInput("q_title", "設問タイトル"),
-      textAreaInput("q_desc", "設問説明"),
-      selectInput("q_type", "設問タイプ",
-                  choices = c("single", "multiple", "numeric", "text",
-                              "select", "slider", "date")),
-      conditionalPanel(
-        condition = "['single','multiple','select'].includes(input.q_type)",
-        textAreaInput("q_options", "選択肢（改行区切り）",
-                      placeholder = "例：はい\nいいえ\nわからない")
-      ),
-      conditionalPanel(
-        condition = "input.q_type == 'slider'",
-        numericInput("q_min", "下限値", 0),
-        numericInput("q_max", "上限値", 100)
-      ),
-      actionButton("add_q", "設問を追加"),
+      helpText("単一グループでは指定番号より前を固定し、それ以降を並べ替えます。複数グループでは各グループの設定を使います。"),
       hr(),
       
       actionButton("save_survey", "アンケートを保存",
@@ -58,7 +43,7 @@ shinyUI(fluidPage(
     
     mainPanel(
       tabsetPanel(
-        tabPanel("設問一覧",        uiOutput("question_list_ui")),
+        tabPanel("設問一覧", uiOutput("question_list_ui")),
         tabPanel("回答画面プレビュー", uiOutput("answer_preview_ui"))
       )
     )

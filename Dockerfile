@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 ubuntu:26.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -57,12 +57,8 @@ RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb 
 
 
 
-## データ保存用ディレクトリ作成
-RUN rm -rf /srv/shiny-server/*
-
-RUN git clone --depth 1 \
-    https://github.com/KuroZatou96310/R_questionnaire.git \
-    /srv/shiny-server
+# ローカルの作業ツリーをアプリとして配置
+COPY . /srv/shiny-server/
 
 # データベース用ディレクトリ作成と権限付与
 RUN mkdir /srv/shiny-server/data
