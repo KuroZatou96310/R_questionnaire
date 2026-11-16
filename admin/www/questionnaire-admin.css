@@ -12,7 +12,7 @@
 .question-card { position:relative; padding:12px; border:1px solid #d1d5db; border-radius:8px; background:#fff; cursor:grab; }
 .question-card:active { cursor:grabbing; }
 .question-card-open { border-color:#93c5fd; box-shadow:0 0 0 2px rgb(59 130 246 / 12%); }
-.question-row.dragging .question-card { opacity:.45; }
+.question-row.dragging .question-card { opacity:.45; user-select:none; }
 .question-card-heading { display:flex; align-items:center; gap:8px; }
 .drag-grip { color:#64748b; font-size:16px; user-select:none; }
 .question-type { margin-left:auto; color:#64748b; font-size:12px; }
@@ -32,8 +32,6 @@
 
 /* Insert buttons stay hidden until the cursor is near an insertion point. */
 .insert-question-button { position:relative; z-index:2; display:block; width:100%; min-height:34px; margin:4px auto; border:1px dashed #93c5fd; border-radius:8px; background:#eff6ff; color:#1d4ed8; cursor:pointer; font-size:14px; line-height:20px; opacity:0; transition:opacity .12s, background .12s; }
-.insert-question-button-first { position:absolute; top:0; left:0; height:0; min-height:0; margin:0; padding:0; overflow:hidden; border:0; opacity:0; }
-.insert-question-button-first.drop-insert-target { height:auto; min-height:34px; padding:6px 12px; overflow:visible; border-width:1px; }
 .insert-question-button-final, .insert-question-button:hover, .insert-question-button:focus { opacity:1; }
 .insert-question-button:hover, .insert-question-button:focus { background:#dbeafe; }
 .group-add-button { display:block; width:100%; min-height:34px; margin:4px auto; border:1px dashed #93c5fd; border-radius:8px; background:#eff6ff; color:#1d4ed8; cursor:pointer; font-size:14px; line-height:20px; }

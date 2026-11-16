@@ -2,8 +2,8 @@ library(shiny)
 
 shinyUI(fluidPage(
   tags$head(
-    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261116-11"),
-    tags$script(src = "questionnaire-dnd.js?v=20261116-8")
+    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261116-12"),
+    tags$script(src = "questionnaire-dnd.js?v=20261116-11")
   ),
   titlePanel("アンケート生成アプリ（admin）"),
   
@@ -26,7 +26,8 @@ shinyUI(fluidPage(
       hr(),
 
       actionButton("save_survey", "アンケートを保存",
-                   style = "color:white;background:#0072B2;width:100%;font-weight:bold;")
+                   style = "color:white;background:#0072B2;width:100%;font-weight:bold;"),
+      uiOutput("access_link_ui")
     ),
     
     mainPanel(
