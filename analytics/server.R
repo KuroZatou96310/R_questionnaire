@@ -645,14 +645,14 @@ shinyServer(function(input, output, session){
     }
 
     result <- data.frame(
-      metric = c("カイ二乗値", "自由度", "p値", "Cramér's V", "期待度数が5未満のセル"),
+      metric = c("期待度数が5未満のセル", "p値（カイ二乗検定）", "クラメールのV", "カイ二乗値", "自由度"),
       value = c(
-        sprintf("%.3f", stats$statistic),
-        stats$df,
+        sprintf("%.1f%% (%d/%d)", 100 * stats$small_expected / stats$expected_cells,
+                stats$small_expected, stats$expected_cells),
         format.pval(stats$p_value, digits = 3, eps = 0.001),
         sprintf("%.3f", stats$cramers_v),
-        sprintf("%.1f%% (%d/%d)", 100 * stats$small_expected / stats$expected_cells,
-                stats$small_expected, stats$expected_cells)
+        sprintf("%.3f", stats$statistic),
+        stats$df
       ),
       check.names = FALSE
     )
