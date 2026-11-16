@@ -1,45 +1,59 @@
 (function () {
   if (window.questionnaireDragDropInstalled) return;
   window.questionnaireDragDropInstalled = true;
-  let dragged = null, sourceGroup = null, target = null, after = false, indicator = null;
+  let dragged = null, sourceGroup = null, target = null, after = false;
   const root = () => document.getElementById('question_list_ui');
-  function clear() {
-    document.querySelectorAll('.drop-group-target').forEach((el) => el.classList.remove('drop-group-target'));
-    indicator?.remove(); indicator = null;
+  function clearTarget(keep = null) {
+    const keepGroup = keep?.closest('.group-card');
+    document.querySelectorAll('.drop-group-target').forEach((el) => {
+      if (el !== keepGroup) el.classList.remove('drop-group-target');
+    });
+    document.querySelectorAll('.drop-insert-target').forEach((button) => {
+      if (button === keep) return;
+      button.classList.remove('drop-insert-target');
+      button.textContent = button.dataset.idleLabel || '設問を追加';
+    });
   }
-  function reset() { dragged?.classList.remove('dragging'); dragged = sourceGroup = target = null; clear(); }
-  function markLine(parent, y) {
-    if (!indicator || indicator.parentElement !== parent) {
-      indicator?.remove(); indicator = document.createElement('div'); indicator.className = 'drop-position-indicator'; parent.appendChild(indicator);
+  function reset() { dragged?.classList.remove('dragging'); dragged = sourceGroup = target = null; clearTarget(); }
+  function setInsertTarget(button, y) {
+    if (!button?.matches('.insert-question-button')) return false;
+    target = button;
+    button.classList.add('drop-insert-target');
+    button.textContent = 'ここに挿入';
+    if (button.classList.contains('insert-question-button-first') && Number.isFinite(y)) {
+      const list = button.closest('.question-list');
+      const rect = list.getBoundingClientRect();
+      button.style.top = `${y - rect.top + list.scrollTop - list.clientTop}px`;
     }
-    const rect = parent.getBoundingClientRect();
-    indicator.style.top = `${y - rect.top + parent.scrollTop - parent.clientTop}px`;
+    const group = button.closest('.group-card');
+    if (group && group !== sourceGroup) group.classList.add('drop-group-target');
+    return true;
   }
   function setTarget(event) {
     const board = root();
     const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
     const hovered = eventTarget;
+    const insertButton = hovered?.closest('.insert-question-button');
     const card = hovered?.closest('.question-card');
     const row = card?.closest('.question-row');
     const group = hovered?.closest('.group-card');
     if (!dragged || !board || !hovered || !board.contains(hovered)) return false;
-    if (row && row !== dragged) {
+    if (insertButton) return setInsertTarget(insertButton);
+    if (row === dragged) return false;
+    if (row) {
       const targetGroup = card.closest('.group-card');
+      const list = targetGroup?.querySelector(':scope > .question-list');
+      if (!list) return false;
       const rect = row.getBoundingClientRect(); after = event.clientY >= rect.top + rect.height / 2;
-      if (targetGroup === sourceGroup) {
-        target = row; markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
-      } else {
-        target = row; targetGroup.classList.add('drop-group-target');
-        markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
-      }
-      return true;
+      const slot = after
+        ? (row.nextElementSibling?.matches('.insert-question-button') ? row.nextElementSibling : list.querySelector(':scope > .insert-question-button-final'))
+        : (row.previousElementSibling?.matches('.insert-question-button') ? row.previousElementSibling : null);
+      return setInsertTarget(slot, after ? rect.bottom : rect.top);
     }
-    if (group && group !== sourceGroup) {
+    if (group) {
       const list = group.querySelector(':scope > .question-list');
       if (!list) return false;
-      target = list.lastElementChild?.matches('.question-row') ? list.lastElementChild : list;
-      after = true; group.classList.add('drop-group-target');
-      markLine(list, list.getBoundingClientRect().bottom); return true;
+      return setInsertTarget(list.querySelector(':scope > .insert-question-button-final'));
     }
     return false;
   }
@@ -79,19 +93,20 @@
   });
   document.addEventListener('dragover', (event) => {
     if (!dragged) return;
-    clear();
-    if (setTarget(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }
+    target = null;
+    if (setTarget(event)) {
+      clearTarget(target);
+      event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+    } else clearTarget();
   });
   document.addEventListener('drop', (event) => {
     if (!dragged) return;
-    clear();
-    if (!setTarget(event)) { reset(); return; }
+    target = null;
+    if (!setTarget(event)) { clearTarget(); reset(); return; }
+    clearTarget(target);
     event.preventDefault();
-    const joinsGroup = target.closest('.group-card') !== sourceGroup;
     const list = target.closest('.question-list');
-    const reference = target === list ? null : (after ? target.nextSibling : target);
-    const oldGap = dragged.nextElementSibling;
-    if (joinsGroup && oldGap?.matches('.insert-question-button')) oldGap.remove();
+    const reference = target.classList.contains('insert-question-button-final') ? target : target.nextElementSibling;
     if (reference !== dragged) list.insertBefore(dragged, reference);
     reset(); sendLayout();
   });

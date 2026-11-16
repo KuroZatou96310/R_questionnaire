@@ -120,6 +120,13 @@ shinyServer(function(input, output, session) {
   active_group_settings <- reactiveVal(NULL)
   group_settings_draft <- reactiveVal(list())
 
+  observeEvent(input$toggle_question, {
+    question_id <- input$toggle_question
+    req(question_id %in% names(store$questions))
+    store$questions <- capture_question_editor_inputs(store$questions)
+    editing_question_options(if (identical(editing_question_options(), question_id)) NULL else question_id)
+  })
+
   capture_question_editor_inputs <- function(questions) {
     for (question_id in names(questions)) {
       question <- questions[[question_id]]
@@ -201,7 +208,7 @@ shinyServer(function(input, output, session) {
     store$groups <- groups
     store$group_order <- names(groups)
     group_settings_draft(list())
-    editing_question_options(NULL)
+    editing_question_options(ids[[1]])
     current_id(sid)
     showNotification("アンケートを読み込みました", type = "message")
   })
@@ -216,12 +223,9 @@ shinyServer(function(input, output, session) {
     qs <- store$questions
     groups <- store$groups
     group_order <- store$group_order
-    if (!length(group_order)) {
-      group_id <- UUIDgenerate()
-      groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
-      group_order <- c(group_order, group_id)
-    }
-    group_id <- tail(group_order, 1)
+    group_id <- UUIDgenerate()
+    groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
+    group_order <- c(group_order, group_id)
     ids <- character(0)
 
     for (template in preset$questions) {
@@ -454,6 +458,9 @@ shinyServer(function(input, output, session) {
     qs[[id]] <- NULL
     store$questions <- qs
     store$order     <- store$order[store$order != id]
+    if (identical(editing_question_options(), id)) {
+      editing_question_options(if (length(store$order)) store$order[[1]] else NULL)
+    }
     groups <- store$groups
     for (group_id in store$group_order) {
       condition <- groups[[group_id]]$settings$visibility
@@ -600,7 +607,7 @@ shinyServer(function(input, output, session) {
       group_settings_draft(list())
 
       if (is_copy) {
-        editing_question_options(NULL)
+        editing_question_options(if (length(store$order)) store$order[[1]] else NULL)
       }
       current_id(sid)
       updateTextInput(session, "survey_id", value = sid)

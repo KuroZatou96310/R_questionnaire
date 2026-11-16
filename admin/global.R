@@ -1,9 +1,10 @@
 # UI helpers for editing questions and their groups.
 
-insert_question_button <- function(payload, final = FALSE) {
+insert_question_button <- function(payload, final = FALSE, first = FALSE) {
   tags$button(
     type = "button",
-    class = paste("insert-question-button", if (final) "insert-question-button-final" else ""),
+    class = paste("insert-question-button", if (final) "insert-question-button-final" else "", if (first) "insert-question-button-first" else ""),
+    `data-idle-label` = "設問を追加",
     onclick = sprintf("Shiny.setInputValue('insert_question','%s',{priority:'event'})", payload),
     "設問を追加"
   )
@@ -125,7 +126,8 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
   if (!length(group_order)) {
     return(tagList(
       p("設問はまだありません。"),
-      insert_question_button("new", final = TRUE)
+      insert_question_button("new", final = TRUE),
+      actionButton("add_group", "グループを追加", class = "group-add-button")
     ))
   }
 
@@ -140,8 +142,6 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
       question$group_id %in% previous_group_ids
     }, logical(1))]
     previous_questions <- questions[previous_ids]
-    show_group_frame <- length(question_ids) == 0 || length(question_ids) > 1
-
     question_items <- lapply(seq_along(question_ids), function(question_index) {
       question_id <- question_ids[question_index]
       question <- questions[[question_id]]
@@ -154,10 +154,11 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
       down_disabled <- if (length(question_ids) > 1) question_index == length(question_ids) else group_index == length(group_order)
 
       tagList(
+        insert_question_button(paste("in", group_id, question_id, sep = "|"), first = question_index == 1),
         div(class = "question-row", `data-question-id` = question_id,
           span(class = "question-number", paste0(question_number, ".")),
           div(class = paste("question-card", if (settings_open) "question-card-open" else ""), `data-question-id` = question_id, draggable = "true",
-            onclick = "if (!event.target.closest('button,input,textarea,select,label,.drag-handle,.question-detail-panel')) this.classList.toggle('question-card-open')",
+            onclick = sprintf("if (!event.target.closest('button,input,textarea,select,label,.drag-grip,.question-detail-panel')) Shiny.setInputValue('toggle_question','%s',{priority:'event'})", question_id),
             div(class = "question-card-heading",
               span(class = "drag-grip", `aria-hidden` = "true", "⠿"),
               strong(title),
@@ -173,8 +174,6 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
                 onclick = sprintf("Shiny.setInputValue('move_question','%s|up',{priority:'event'})", question_id), "↑"),
               tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (down_disabled) "disabled" else NULL,
                 onclick = sprintf("Shiny.setInputValue('move_question','%s|down',{priority:'event'})", question_id), "↓"),
-              if (length(question_ids) == 1) tags$button(type = "button", class = "btn btn-default btn-sm",
-                onclick = sprintf("Shiny.setInputValue('toggle_group_settings','%s',{priority:'event'})", group_id), "グループ設定"),
               actionButton(
                 paste0("del_", question_id), "削除",
                 onclick = sprintf("Shiny.setInputValue('delete_q','%s',{priority:'event'})", question_id),
@@ -183,32 +182,26 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
             ),
             question_detail_panel_ui(question_id, question)
           )
-        ),
-        if (question_index < length(question_ids)) insert_question_button(paste("in", group_id, question_ids[question_index + 1], sep = "|"))
+        )
       )
     })
 
-    div(class = if (show_group_frame) "group-card multi-question-group" else "group-card",
+    div(class = "group-card multi-question-group",
       `data-group-id` = group_id,
-      if (show_group_frame) div(class = "group-options-row",
+      div(class = "group-options-row",
         strong(class = "group-title", group$title),
         tags$button(type = "button", class = "btn btn-default btn-sm",
           onclick = sprintf("Shiny.setInputValue('toggle_group_settings','%s',{priority:'event'})", group_id),
           "グループ設定")
       ),
-      div(class = "question-list", `data-group-id` = group_id, question_items)
+      div(class = "question-list", `data-group-id` = group_id,
+        question_items,
+        insert_question_button(paste("after_group", group_id, sep = "|"), final = TRUE)
+      )
     )
   })
 
-  board_items <- c(
-    unlist(lapply(seq_along(group_cards), function(i) list(
-      group_cards[[i]],
-      insert_question_button(
-        if (i == length(group_cards)) "append" else paste("after_group", group_order[i], sep = "|"),
-        final = i == length(group_cards)
-      )
-    )), recursive = FALSE)
+  div(class = "group-board", group_cards,
+    actionButton("add_group", "グループを追加", class = "group-add-button")
   )
-
-  div(class = "group-board", board_items)
 }
