@@ -2,6 +2,7 @@
   if (window.questionnaireDragDropInstalled) return;
   window.questionnaireDragDropInstalled = true;
   let dragged = null, sourceGroup = null, target = null, after = false;
+  let pending = null, lastPointer = null, suppressClick = false;
   const root = () => document.getElementById('question_list_ui');
   function clearTarget(keep = null) {
     const keepGroup = keep?.closest('.group-card');
@@ -14,17 +15,16 @@
       button.textContent = button.dataset.idleLabel || '設問を追加';
     });
   }
-  function reset() { dragged?.classList.remove('dragging'); dragged = sourceGroup = target = null; clearTarget(); }
-  function setInsertTarget(button, y) {
+  function reset() {
+    dragged?.classList.remove('dragging');
+    dragged = sourceGroup = target = pending = lastPointer = null;
+    clearTarget();
+  }
+  function setInsertTarget(button) {
     if (!button?.matches('.insert-question-button')) return false;
     target = button;
     button.classList.add('drop-insert-target');
     button.textContent = 'ここに挿入';
-    if (button.classList.contains('insert-question-button-first') && Number.isFinite(y)) {
-      const list = button.closest('.question-list');
-      const rect = list.getBoundingClientRect();
-      button.style.top = `${y - rect.top + list.scrollTop - list.clientTop}px`;
-    }
     const group = button.closest('.group-card');
     if (group && group !== sourceGroup) group.classList.add('drop-group-target');
     return true;
@@ -48,7 +48,7 @@
       const slot = after
         ? (row.nextElementSibling?.matches('.insert-question-button') ? row.nextElementSibling : list.querySelector(':scope > .insert-question-button-final'))
         : (row.previousElementSibling?.matches('.insert-question-button') ? row.previousElementSibling : null);
-      return setInsertTarget(slot, after ? rect.bottom : rect.top);
+      return setInsertTarget(slot);
     }
     if (group) {
       const list = group.querySelector(':scope > .question-list');
@@ -82,33 +82,82 @@
     });
     Shiny.setInputValue('group_layout', JSON.stringify({ groups, question_drafts }), { priority: 'event' });
   }
-  document.addEventListener('dragstart', (event) => {
-    const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
-    const card = eventTarget?.closest('.question-card');
-    if (eventTarget?.closest('button,input,textarea,select,label')) { event.preventDefault(); return; }
-    if (!card || !root()?.contains(card)) { event.preventDefault(); return; }
-    dragged = card.closest('.question-row'); sourceGroup = card.closest('.group-card');
-    event.dataTransfer.setData('text/plain', card.dataset.questionId); event.dataTransfer.effectAllowed = 'move';
-    requestAnimationFrame(() => dragged?.classList.add('dragging'));
-  });
-  document.addEventListener('dragover', (event) => {
+  function scrollDuringDrag(event) {
     if (!dragged) return;
-    target = null;
-    if (setTarget(event)) {
-      clearTarget(target);
-      event.preventDefault(); event.dataTransfer.dropEffect = 'move';
-    } else clearTarget();
-  });
-  document.addEventListener('drop', (event) => {
-    if (!dragged) return;
-    target = null;
-    if (!setTarget(event)) { clearTarget(); reset(); return; }
-    clearTarget(target);
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1);
+    let element = event.target instanceof Element ? event.target : event.target?.parentElement;
+    let scroller = null;
+    while (element && element !== document.body) {
+      const overflowY = window.getComputedStyle(element).overflowY;
+      const canScroll = delta < 0 ? element.scrollTop > 0 : element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+      if ((overflowY === 'auto' || overflowY === 'scroll') && canScroll) {
+        scroller = element;
+        break;
+      }
+      element = element.parentElement;
+    }
     event.preventDefault();
+    if (scroller) scroller.scrollTop += delta;
+    else window.scrollBy(0, delta);
+    if (lastPointer) requestAnimationFrame(() => updateTarget(lastPointer.x, lastPointer.y));
+  }
+  document.addEventListener('wheel', scrollDuringDrag, { capture: true, passive: false });
+  function updateTarget(x, y) {
+    target = null;
+    const hovered = document.elementFromPoint(x, y);
+    if (setTarget({ target: hovered, clientY: y })) clearTarget(target);
+    else clearTarget();
+  }
+  function finishDrag(x, y) {
+    updateTarget(x, y);
+    if (!dragged || !target) { reset(); return; }
     const list = target.closest('.question-list');
     const reference = target.classList.contains('insert-question-button-final') ? target : target.nextElementSibling;
-    if (reference !== dragged) list.insertBefore(dragged, reference);
-    reset(); sendLayout();
+    if (list && reference !== dragged) list.insertBefore(dragged, reference);
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+    reset();
+    sendLayout();
+  }
+  document.addEventListener('click', (event) => {
+    if (!suppressClick) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    suppressClick = false;
+  }, true);
+  document.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.pointerType !== 'mouse') return;
+    const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const card = eventTarget?.closest('.question-card');
+    if (!card || !root()?.contains(card) || eventTarget?.closest('button,input,textarea,select,label')) return;
+    pending = {
+      card,
+      row: card.closest('.question-row'),
+      group: card.closest('.group-card'),
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY
+    };
   });
-  document.addEventListener('dragend', reset);
+  document.addEventListener('pointermove', (event) => {
+    if (!pending || event.pointerId !== pending.pointerId) return;
+    if (!dragged) {
+      if (Math.hypot(event.clientX - pending.startX, event.clientY - pending.startY) < 5) return;
+      dragged = pending.row;
+      sourceGroup = pending.group;
+      try { pending.card.setPointerCapture(event.pointerId); } catch (_) {}
+      dragged?.classList.add('dragging');
+    }
+    event.preventDefault();
+    lastPointer = { x: event.clientX, y: event.clientY };
+    updateTarget(lastPointer.x, lastPointer.y);
+  });
+  document.addEventListener('pointerup', (event) => {
+    if (!pending || event.pointerId !== pending.pointerId) return;
+    if (dragged) finishDrag(event.clientX, event.clientY);
+    else pending = null;
+  });
+  document.addEventListener('pointercancel', (event) => {
+    if (pending && event.pointerId === pending.pointerId) reset();
+  });
 })();

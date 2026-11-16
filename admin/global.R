@@ -1,9 +1,9 @@
 # UI helpers for editing questions and their groups.
 
-insert_question_button <- function(payload, final = FALSE, first = FALSE) {
+insert_question_button <- function(payload, final = FALSE) {
   tags$button(
     type = "button",
-    class = paste("insert-question-button", if (final) "insert-question-button-final" else "", if (first) "insert-question-button-first" else ""),
+    class = paste("insert-question-button", if (final) "insert-question-button-final" else ""),
     `data-idle-label` = "設問を追加",
     onclick = sprintf("Shiny.setInputValue('insert_question','%s',{priority:'event'})", payload),
     "設問を追加"
@@ -154,10 +154,10 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
       down_disabled <- if (length(question_ids) > 1) question_index == length(question_ids) else group_index == length(group_order)
 
       tagList(
-        insert_question_button(paste("in", group_id, question_id, sep = "|"), first = question_index == 1),
+        insert_question_button(paste("in", group_id, question_id, sep = "|")),
         div(class = "question-row", `data-question-id` = question_id,
           span(class = "question-number", paste0(question_number, ".")),
-          div(class = paste("question-card", if (settings_open) "question-card-open" else ""), `data-question-id` = question_id, draggable = "true",
+          div(class = paste("question-card", if (settings_open) "question-card-open" else ""), `data-question-id` = question_id,
             onclick = sprintf("if (!event.target.closest('button,input,textarea,select,label,.drag-grip,.question-detail-panel')) Shiny.setInputValue('toggle_question','%s',{priority:'event'})", question_id),
             div(class = "question-card-heading",
               span(class = "drag-grip", `aria-hidden` = "true", "⠿"),
