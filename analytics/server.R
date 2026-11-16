@@ -164,7 +164,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single", "select", "multiple", "date", "numeric", "slider"),
+      function(q) q$type %in% c("single", "single_numeric", "single_text", "select", "multiple", "date", "numeric", "slider"),
       logical(1)
     )]
 
@@ -263,7 +263,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single", "select", "multiple", "date", "numeric", "slider"),
+      function(q) q$type %in% c("single", "single_numeric", "single_text", "select", "multiple", "date", "numeric", "slider"),
       logical(1)
     )]
 
@@ -304,7 +304,7 @@ shinyServer(function(input, output, session){
 
     question <- qs[[input$filter_question]]
 
-    if (question$type %in% c("numeric", "slider")) {
+    if (question$type %in% c("numeric", "single_numeric", "slider")) {
       return(tagList(
         numericInput("filter_min", "以上", value = NA, step = "any"),
         numericInput("filter_max", "以下", value = NA, step = "any"),
@@ -342,7 +342,7 @@ shinyServer(function(input, output, session){
 
     question <- qs[[input$filter_question]]
 
-    if (question$type %in% c("numeric", "slider")) {
+    if (question$type %in% c("numeric", "single_numeric", "slider")) {
       values <- answered_question_data(survey_answers(), input$filter_question)
       values$numeric_value <- suppressWarnings(as.numeric(values$answer_text))
       keep <- !is.na(values$numeric_value)
@@ -702,7 +702,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("numeric", "slider"),
+      function(q) q$type %in% c("numeric", "single_numeric", "slider"),
       logical(1)
     )]
 

@@ -29,6 +29,10 @@ answer_question_ui <- function(q, value = NULL) {
   input <- switch(
     q$type,
     single   = radioButtons(q$id, NULL, choices = options, selected = if (is.null(value)) character(0) else value),
+    single_numeric = radioButtons(q$id, NULL, choices = options, selected = if (is.null(value)) character(0) else value),
+    single_text = if (identical(q$settings$display, "dropdown")) {
+      selectInput(q$id, NULL, choices = c("選択してください" = "", options), selected = if (is.null(value)) "" else value)
+    } else radioButtons(q$id, NULL, choices = options, selected = if (is.null(value)) character(0) else value),
     multiple = checkboxGroupInput(q$id, NULL, choices = options, selected = value),
     select   = tags$select(
       id = q$id,
@@ -36,8 +40,8 @@ answer_question_ui <- function(q, value = NULL) {
       tags$option("選択してください", value = "", selected = NA, disabled = NA),
       lapply(options, function(option) tags$option(option, value = option, selected = identical(option, value)))
     ),
-    numeric  = numericInput(q$id, NULL, value = if (is.null(value)) NA else value),
-    text     = textAreaInput(q$id, NULL, value = if (is.null(value)) "" else value, rows = 3),
+    numeric  = numericInput(q$id, NULL, value = if (is.null(value)) NA else value, min = q$min, max = q$max, step = "any"),
+    text     = if (isTRUE(q$settings$long_text)) textAreaInput(q$id, NULL, value = if (is.null(value)) "" else value, rows = 3) else textInput(q$id, NULL, value = if (is.null(value)) "" else value),
     slider   = sliderInput(q$id, NULL, min = q$min, max = q$max, value = if (is.null(value)) q$min else value),
     date     = {
       date_input <- dateInput(q$id, NULL, value = if (is.null(value)) Sys.Date() else value)

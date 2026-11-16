@@ -10,15 +10,11 @@ shinyUI(
       bg = "#D5E6D9",
       fg = "#20243A"
     ),
-    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "styles.css")),
+    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20261116-2")),
     div(
       class = "answer-wrap",
       h1(class = "answer-heading", "アンケートに回答"),
-      div(
-        class = "load-card",
-        textInput("survey_id", "アンケートID", placeholder = "例：survey-001"),
-        actionButton("load", "アンケートを読み込む", class = "btn-primary")
-      ),
+      uiOutput("load_panel_ui"),
       uiOutput("question_ui")
     )
   )
