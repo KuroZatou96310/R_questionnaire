@@ -7,28 +7,6 @@ library(RSQLite)
 DATA_DIR <- Sys.getenv("QUESTIONNAIRE_DATA_DIR", "/srv/shiny-server/data")
 DB_FILE <- file.path(DATA_DIR, "questionnaire.db")
 
-# Some SQLite/R encoding combinations can expose non-ASCII text as a literal
-# "<U+XXXX>" sequence (for example, "<U+5358><U+629E>").  Convert that
-# display notation back to UTF-8 before it reaches a Shiny UI.
-decode_unicode_notation <- function(value) {
-  value <- enc2utf8(as.character(value))
-
-  vapply(value, function(text) {
-    matches <- regmatches(text, gregexpr("<U\\+[0-9A-Fa-f]{4,6}>", text, perl = TRUE))[[1]]
-    if (!length(matches) || identical(matches, "")) return(text)
-
-    replacements <- vapply(matches, function(match) {
-      code_point <- suppressWarnings(strtoi(substr(match, 4, nchar(match) - 1), base = 16L))
-      if (is.na(code_point)) match else intToUtf8(code_point)
-    }, character(1))
-
-    for (i in seq_along(matches)) {
-      text <- sub(matches[i], replacements[i], text, fixed = TRUE)
-    }
-    text
-  }, character(1), USE.NAMES = FALSE)
-}
-
 init_db <- function() {
   dir.create(DATA_DIR, recursive = TRUE, showWarnings = FALSE)
 
@@ -141,9 +119,9 @@ load_survey_info <- function(survey_id) with_db({
   ", params = list(survey_id))
   if (nrow(survey) == 0) return(list(id = survey_id, title = "", description = ""))
   list(
-    id = decode_unicode_notation(survey$survey_id[1]),
-    title = decode_unicode_notation(survey$title[1]),
-    description = decode_unicode_notation(survey$description[1])
+    id = enc2utf8(as.character(survey$survey_id[1])),
+    title = enc2utf8(as.character(survey$title[1])),
+    description = enc2utf8(as.character(survey$description[1]))
   )
 })
 
@@ -201,7 +179,7 @@ load_groups <- function(survey_id) with_db({
     settings <- tryCatch(fromJSON(groups$settings_json[i], simplifyVector = FALSE), error = function(e) list())
     # Page breaks are opt-in. Older rows stored "group" implicitly for every group.
     if (is.null(settings$page) || identical(settings$page, "group")) settings$page <- FALSE
-    list(id = groups$group_id[i], title = decode_unicode_notation(groups$title[i]), settings = settings)
+    list(id = groups$group_id[i], title = enc2utf8(groups$title[i]), settings = settings)
   })
   names(result) <- groups$group_id
   result
@@ -218,14 +196,14 @@ load_questions <- function(survey_id) with_db({
     options <- NULL
     if (!is.na(row$options_json) && nzchar(row$options_json)) {
       options <- fromJSON(enc2utf8(row$options_json), simplifyVector = FALSE)
-      options <- decode_unicode_notation(unlist(options, use.names = FALSE))
+      options <- enc2utf8(as.character(unlist(options, use.names = FALSE)))
     }
     settings <- tryCatch(fromJSON(row$settings_json, simplifyVector = FALSE), error = function(e) list())
     list(
-      id = decode_unicode_notation(row$question_id),
+      id = enc2utf8(as.character(row$question_id)),
       group_id = if (is.na(row$group_id) || !nzchar(row$group_id)) NA_character_ else as.character(row$group_id),
-      title = decode_unicode_notation(row$title),
-      desc = decode_unicode_notation(row$description),
+      title = enc2utf8(as.character(row$title)),
+      desc = enc2utf8(as.character(row$description)),
       type = as.character(row$type),
       options = options,
       settings = settings,
@@ -370,6 +348,6 @@ load_answers <- function(survey_id) with_db({
     FROM responses r JOIN answers a ON r.response_id = a.response_id
     WHERE r.survey_id = ? ORDER BY r.submitted_at
   ", list(survey_id))
-  answers$answer_text <- decode_unicode_notation(answers$answer_text)
+  answers$answer_text <- enc2utf8(as.character(answers$answer_text))
   answers
 })
