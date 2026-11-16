@@ -193,8 +193,8 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
             if (!is.null(question$desc) && length(question$desc) && !is.na(question$desc) && nzchar(question$desc)) {
               div(class = "question-description", question$desc)
             },
-            if (!is.null(question$options)) div(class = "question-options", paste("選択肢:", paste(unlist(question$options), collapse = ", "))),
-            if (!is.null(question$min) && question$type == "slider") div(class = "question-options", paste0("範囲: ", question$min, "〜", question$max)),
+            if (!is.null(question$options) && question$type != "single_numeric") div(class = "question-options", paste("選択肢:", paste(unlist(question$options), collapse = ", "))),
+            if (!is.null(question$min) && question$type %in% c("single_numeric", "numeric", "slider")) div(class = "question-options", paste0("範囲: ", question$min, "〜", question$max)),
             div(class = "question-actions",
               tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (up_disabled) "disabled" else NULL,
                 onclick = sprintf("Shiny.setInputValue('move_question','%s|up',{priority:'event'})", question_id), "↑"),

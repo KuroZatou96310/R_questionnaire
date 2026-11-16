@@ -164,7 +164,8 @@ shinyServer(function(input, output, session) {
       if (question$type %in% c("slider", "single_numeric", "numeric")) {
         for (field in c("min", "max")) {
           value <- input[[paste0("question_edit_", field, "_", question_id)]]
-          if (!is.null(value)) question[[field]] <- suppressWarnings(as.numeric(value))
+          if (is.null(value) || !length(value) || is.na(value)) question[[field]] <- NULL
+          else question[[field]] <- suppressWarnings(as.numeric(value))
         }
       } else {
         question$min <- question$max <- NULL
@@ -529,8 +530,8 @@ shinyServer(function(input, output, session) {
               "single_text" = if (identical(q$settings$display, "dropdown")) selectInput(paste0("p_", id), label, choices = opts) else radioButtons(paste0("p_", id), label, choices = opts),
               "multiple" = checkboxGroupInput(paste0("p_", id), label, choices = opts),
               "select"   = selectInput(paste0("p_", id), label, choices = opts),
-              "numeric"  = numericInput(paste0("p_", id), label, value = NA),
-              "text"     = textAreaInput(paste0("p_", id), label),
+              "numeric"  = numericInput(paste0("p_", id), label, value = NA, min = q$min, max = q$max, step = "any"),
+              "text"     = if (isTRUE(q$settings$long_text)) textAreaInput(paste0("p_", id), label) else textInput(paste0("p_", id), label),
               "slider"   = sliderInput(paste0("p_", id), label, min = q$min, max = q$max, value = q$min),
               "date"     = dateInput(paste0("p_", id), label, value = Sys.Date())
             )
@@ -586,8 +587,12 @@ shinyServer(function(input, output, session) {
         question$options <- options
       } else question$options <- NULL
       if (type %in% c("slider", "numeric")) {
-        question$min <- input[[paste0("question_edit_min_", qid)]]
-        question$max <- input[[paste0("question_edit_max_", qid)]]
+        minimum <- input[[paste0("question_edit_min_", qid)]]
+        maximum <- input[[paste0("question_edit_max_", qid)]]
+        if (is.null(minimum) || !length(minimum) || is.na(minimum)) minimum <- NULL
+        if (is.null(maximum) || !length(maximum) || is.na(maximum)) maximum <- NULL
+        question$min <- minimum
+        question$max <- maximum
         if (type == "slider" && (is.null(question$max) || question$max <= question$min)) {
           showNotification("上限は下限より大きくしてください。", type = "error")
           return()

@@ -148,7 +148,7 @@ shinyServer(function(input, output, session){
         group <- groups[[group_id]]
         tagList(
           if (length(page_group_ids) > 1) h3(class = "group-heading", group$title),
-          lapply(group_question_ids, function(id) answer_question_ui(qs[[id]], current_answer(id)))
+          lapply(group_question_ids, function(id) answer_question_ui(qs[[id]], isolate(current_answer(id))))
         )
       }),
       div(class = "group-navigation",
