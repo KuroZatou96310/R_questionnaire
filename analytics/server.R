@@ -7,7 +7,7 @@ try(Sys.setlocale("LC_CTYPE", "C.UTF-8"), silent = TRUE)
 font_add("jp", "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc")
 showtext_auto()
 
-source("db.R")
+source("../common/db.R")
 
 shinyServer(function(input, output, session){
 
