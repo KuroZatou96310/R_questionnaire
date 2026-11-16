@@ -118,6 +118,8 @@ shinyServer(function(input, output, session) {
   )
   current_id <- reactiveVal(NULL)
   editing_question_options <- reactiveVal(NULL)
+  active_group_settings <- reactiveVal(NULL)
+  group_settings_draft <- reactiveVal(list())
 
 
   # ---------- 既存アンケート読み込み ----------
@@ -155,6 +157,7 @@ shinyServer(function(input, output, session) {
     store$questions <- qlist
     store$groups <- groups
     store$group_order <- names(groups)
+    group_settings_draft(list())
     editing_question_options(NULL)
     current_id(sid)
     showNotification("アンケートを読み込みました", type = "message")
@@ -206,6 +209,51 @@ shinyServer(function(input, output, session) {
     }, character(1))
     showModal(modalDialog("追加先のグループ", selectInput("group_target_id", "グループ", setNames(targets, labels)),
       footer = tagList(modalButton("キャンセル"), actionButton("group_question_confirm", "グループ化"))))
+  })
+
+  observeEvent(input$toggle_group_settings, {
+    group_id <- input$toggle_group_settings
+    req(group_id %in% store$group_order)
+    group_index <- match(group_id, store$group_order)
+    previous_group_ids <- if (group_index > 1) store$group_order[seq_len(group_index - 1)] else character()
+    previous_ids <- store$order[vapply(store$questions[store$order], function(q) q$group_id %in% previous_group_ids, logical(1))]
+    active_group_settings(group_id)
+    group <- store$groups[[group_id]]
+    drafts <- group_settings_draft()
+    if (!is.null(drafts[[group_id]])) group$settings <- drafts[[group_id]]
+    showModal(modalDialog(
+      title = "グループ設定",
+      question_group_settings_ui(group_id, group, store$questions[previous_ids]),
+      footer = NULL,
+      easyClose = TRUE
+    ))
+  })
+
+  observe({
+    group_id <- active_group_settings()
+    req(!is.null(group_id), group_id %in% store$group_order)
+    page <- input[[paste0("group_page_", group_id)]]
+    randomize <- input[[paste0("group_randomize_questions_", group_id)]]
+    has_visibility <- input[[paste0("group_has_visibility_", group_id)]]
+    req(!is.null(page), !is.null(randomize), !is.null(has_visibility))
+
+    settings <- list(page = isTRUE(page), randomize_questions = isTRUE(randomize))
+    if (isTRUE(has_visibility)) {
+      condition_question <- input[[paste0("group_condition_question_", group_id)]]
+      condition_value <- input[[paste0("group_condition_value_", group_id)]]
+      req(!is.null(condition_question), !is.null(condition_value), nzchar(condition_value))
+      settings$visibility <- list(
+        question_id = condition_question,
+        operator = input[[paste0("group_condition_operator_", group_id)]],
+        value = condition_value
+      )
+    }
+
+    drafts <- group_settings_draft()
+    if (!identical(drafts[[group_id]], settings)) {
+      drafts[[group_id]] <- settings
+      group_settings_draft(drafts)
+    }
   })
 
   observeEvent(input$group_question_confirm, {
@@ -489,26 +537,9 @@ shinyServer(function(input, output, session) {
     }
 
     groups_to_save <- store$groups
-    for (open_group in store$group_order) {
-      has_visibility <- isTRUE(input[[paste0("group_has_visibility_", open_group)]])
-      settings <- list(
-        page = isTRUE(input[[paste0("group_page_", open_group)]]),
-        randomize_questions = isTRUE(input[[paste0("group_randomize_questions_", open_group)]])
-      )
-      if (has_visibility) {
-        condition_question <- input[[paste0("group_condition_question_", open_group)]]
-        condition_value <- input[[paste0("group_condition_value_", open_group)]]
-        if (is.null(condition_question) || is.null(condition_value) || !nzchar(condition_value)) {
-          showNotification("グループの表示条件に設問と回答値を指定してください。", type = "error")
-          return()
-        }
-        settings$visibility <- list(
-          question_id = condition_question,
-          operator = input[[paste0("group_condition_operator_", open_group)]],
-          value = condition_value
-        )
-      }
-      groups_to_save[[open_group]]$settings <- settings
+    settings_draft <- group_settings_draft()
+    for (group_id in store$group_order) {
+      if (!is.null(settings_draft[[group_id]])) groups_to_save[[group_id]]$settings <- settings_draft[[group_id]]
     }
 
     sid <- trimws(input$survey_id)
@@ -542,6 +573,7 @@ shinyServer(function(input, output, session) {
       store$order <- saved_state$order
       store$groups <- saved_state$groups
       store$group_order <- saved_state$group_order
+      group_settings_draft(list())
 
       if (is_copy) {
         editing_question_options(NULL)

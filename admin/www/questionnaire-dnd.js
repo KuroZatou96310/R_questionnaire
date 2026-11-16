@@ -20,15 +20,16 @@
     const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
     const hovered = eventTarget;
     const card = hovered?.closest('.question-card');
+    const row = card?.closest('.question-row');
     const group = hovered?.closest('.group-card');
     if (!dragged || !board || !hovered || !board.contains(hovered)) return false;
-    if (card && card !== dragged) {
+    if (row && row !== dragged) {
       const targetGroup = card.closest('.group-card');
-      const rect = card.getBoundingClientRect(); after = event.clientY >= rect.top + rect.height / 2;
+      const rect = row.getBoundingClientRect(); after = event.clientY >= rect.top + rect.height / 2;
       if (targetGroup === sourceGroup) {
-        target = card; mode = 'question'; markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
+        target = row; mode = 'question'; markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
       } else {
-        target = card; mode = 'join-question'; targetGroup.classList.add('drop-group-target');
+        target = row; mode = 'join-question'; targetGroup.classList.add('drop-group-target');
         markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
       }
       return true;
@@ -36,7 +37,7 @@
     if (group && group !== sourceGroup) {
       const list = group.querySelector(':scope > .question-list');
       if (!list) return false;
-      target = list.lastElementChild?.matches('.question-card') ? list.lastElementChild : list;
+      target = list.lastElementChild?.matches('.question-row') ? list.lastElementChild : list;
       mode = 'join-question'; after = true; group.classList.add('drop-group-target');
       markLine(list, list.getBoundingClientRect().bottom); return true;
     }
@@ -46,7 +47,7 @@
     const board = root(); if (!board || !window.Shiny) return;
     const layout = Array.from(board.querySelectorAll('.group-card')).map((group) => ({
       group_id: group.dataset.groupId,
-      question_ids: Array.from(group.querySelectorAll(':scope > .question-list > .question-card')).map((q) => q.dataset.questionId)
+      question_ids: Array.from(group.querySelectorAll(':scope > .question-list > .question-row')).map((row) => row.dataset.questionId)
     }));
     Shiny.setInputValue('group_layout', JSON.stringify(layout), { priority: 'event' });
   }
@@ -54,9 +55,9 @@
     const handle = event.target.closest?.('.drag-handle') || event.composedPath().find((node) => node instanceof Element && node.matches('.drag-handle'));
     const card = handle?.closest('.question-card');
     if (!card || !root()?.contains(card)) { event.preventDefault(); return; }
-    dragged = card; sourceGroup = card.closest('.group-card');
+    dragged = card.closest('.question-row'); sourceGroup = card.closest('.group-card');
     event.dataTransfer.setData('text/plain', card.dataset.questionId); event.dataTransfer.effectAllowed = 'move';
-    requestAnimationFrame(() => card.classList.add('dragging'));
+    requestAnimationFrame(() => dragged?.classList.add('dragging'));
   });
   document.addEventListener('dragover', (event) => {
     if (!dragged) return;
@@ -75,7 +76,7 @@
       const oldGap = dragged.nextElementSibling;
       if (mode === 'join-question' && oldGap?.matches('.insert-question-button')) oldGap.remove();
       if (reference !== dragged) list.insertBefore(dragged, reference);
-      if (mode === 'join-question' && oldGroup.querySelectorAll('.question-card').length === 0) {
+      if (mode === 'join-question' && oldGroup.querySelectorAll(':scope > .question-list > .question-row').length === 0) {
         const afterGroup = oldGroup.nextElementSibling;
         if (afterGroup?.matches('.insert-question-button')) afterGroup.remove();
         oldGroup.remove();

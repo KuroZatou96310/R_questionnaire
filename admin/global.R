@@ -146,55 +146,51 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
       down_disabled <- if (length(question_ids) > 1) question_index == length(question_ids) else group_index == length(group_order)
 
       tagList(
-        div(class = paste("question-card", if (settings_open) "question-card-open" else ""), `data-question-id` = question_id,
-          onclick = "if (!event.target.closest('button,input,textarea,select,label,.drag-handle,.question-detail-panel')) this.classList.toggle('question-card-open')",
-          div(class = "question-card-heading",
-            span(class = "drag-handle", title = "ここをつかんでドラッグして並べ替え", draggable = "true", "⠿ ドラッグ"),
-            span(class = "question-number", paste0(question_number, ".")),
-            strong(title),
-            span(class = "question-type", question$type)
-          ),
-          if (!is.null(question$desc) && length(question$desc) && !is.na(question$desc) && nzchar(question$desc)) {
-            div(class = "question-description", question$desc)
-          },
-          if (!is.null(question$options)) div(class = "question-options", paste("選択肢:", paste(unlist(question$options), collapse = ", "))),
-          if (!is.null(question$min) && question$type == "slider") div(class = "question-options", paste0("範囲: ", question$min, "〜", question$max)),
-          div(class = "question-actions",
-            tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (up_disabled) "disabled" else NULL,
-              onclick = sprintf("Shiny.setInputValue('move_question','%s|up',{priority:'event'})", question_id), "↑"),
-            tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (down_disabled) "disabled" else NULL,
-              onclick = sprintf("Shiny.setInputValue('move_question','%s|down',{priority:'event'})", question_id), "↓"),
-            tags$button(type = "button", class = "btn btn-default btn-sm",
-              onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})", if (length(question_ids) > 1) "split_question" else "group_question", question_id),
-              if (length(question_ids) > 1) "グループから外す" else "グループ化"),
-            actionButton(
-              paste0("del_", question_id), "削除",
-              onclick = sprintf("Shiny.setInputValue('delete_q','%s',{priority:'event'})", question_id),
-              class = "btn-danger btn-sm"
-            )
-          ),
-          question_detail_panel_ui(question_id, question)
+        div(class = "question-row", `data-question-id` = question_id,
+          span(class = "question-number", paste0(question_number, ".")),
+          div(class = paste("question-card", if (settings_open) "question-card-open" else ""), `data-question-id` = question_id,
+            onclick = "if (!event.target.closest('button,input,textarea,select,label,.drag-handle,.question-detail-panel')) this.classList.toggle('question-card-open')",
+            div(class = "question-card-heading",
+              span(class = "drag-handle", title = "ここをつかんでドラッグして並べ替え", draggable = "true", "⠿ ドラッグ"),
+              strong(title),
+              span(class = "question-type", question$type)
+            ),
+            if (!is.null(question$desc) && length(question$desc) && !is.na(question$desc) && nzchar(question$desc)) {
+              div(class = "question-description", question$desc)
+            },
+            if (!is.null(question$options)) div(class = "question-options", paste("選択肢:", paste(unlist(question$options), collapse = ", "))),
+            if (!is.null(question$min) && question$type == "slider") div(class = "question-options", paste0("範囲: ", question$min, "〜", question$max)),
+            div(class = "question-actions",
+              tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (up_disabled) "disabled" else NULL,
+                onclick = sprintf("Shiny.setInputValue('move_question','%s|up',{priority:'event'})", question_id), "↑"),
+              tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (down_disabled) "disabled" else NULL,
+                onclick = sprintf("Shiny.setInputValue('move_question','%s|down',{priority:'event'})", question_id), "↓"),
+              tags$button(type = "button", class = "btn btn-default btn-sm",
+                onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})", if (length(question_ids) > 1) "split_question" else "group_question", question_id),
+                if (length(question_ids) > 1) "グループから外す" else "グループ化"),
+              if (length(question_ids) == 1) tags$button(type = "button", class = "btn btn-default btn-sm",
+                onclick = sprintf("Shiny.setInputValue('toggle_group_settings','%s',{priority:'event'})", group_id), "グループ設定"),
+              actionButton(
+                paste0("del_", question_id), "削除",
+                onclick = sprintf("Shiny.setInputValue('delete_q','%s',{priority:'event'})", question_id),
+                class = "btn-danger btn-sm"
+              )
+            ),
+            question_detail_panel_ui(question_id, question)
+          )
         ),
         if (question_index < length(question_ids)) insert_question_button(paste("in", group_id, question_ids[question_index + 1], sep = "|"))
       )
     })
 
-    tagList(
-      div(class = paste("group-card", if (length(question_ids) > 1) "multi-question-group" else "single-question-group"),
-        `data-group-id` = group_id,
-        div(class = "group-options-row",
-          span(if (length(question_ids) > 1) paste0(length(question_ids), "設問をグループ化中") else "単独設問"),
-          tags$button(
-            type = "button", class = "btn btn-default btn-sm",
-            onclick = "event.stopPropagation(); this.closest('.group-card').classList.toggle('group-settings-open')",
-            "グループ設定"
-          )
-        ),
-        div(class = "question-list", `data-group-id` = group_id, question_items),
-        div(class = "group-settings-panel",
-          question_group_settings_ui(group_id, group, previous_questions)
-        )
-      )
+    div(class = paste("group-card", if (length(question_ids) > 1) "multi-question-group" else "single-question-group"),
+      `data-group-id` = group_id,
+      if (length(question_ids) > 1) div(class = "group-options-row",
+        tags$button(type = "button", class = "btn btn-default btn-sm",
+          onclick = sprintf("Shiny.setInputValue('toggle_group_settings','%s',{priority:'event'})", group_id),
+          "グループ設定")
+      ),
+      div(class = "question-list", `data-group-id` = group_id, question_items)
     )
   })
 
@@ -206,8 +202,5 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
     )), recursive = FALSE)
   )
 
-  tagList(
-    p(class = "drag-instructions", "設問カードをクリックすると編集欄が開きます。内容とオプションはアンケート保存時に反映されます。"),
-    div(class = "group-board", board_items)
-  )
+  div(class = "group-board", board_items)
 }

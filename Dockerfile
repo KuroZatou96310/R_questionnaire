@@ -51,6 +51,9 @@ RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb 
     https://download3.rstudio.org/ubuntu-20.04/x86_64/shiny-server-1.5.23.1030-amd64.deb && \
     gdebi -n shiny-server-1.5.23.1030-amd64.deb
 
+# Shiny Server starts app processes in a login shell, which resets Docker ENV.
+RUN printf '\nexport LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' >> /home/shiny/.profile
+
 # app 配置
 #COPY shinyApp/ /srv/shiny-server/
 # 所有権をshinyに統一
