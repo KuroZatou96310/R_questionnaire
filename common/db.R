@@ -104,13 +104,10 @@ with_db <- function(code) {
 hash_pw <- function(pw) digest(pw, algo = "sha256", serialize = FALSE)
 
 load_db <- function() with_db({
-  surveys <- dbReadTable(con, "surveys")
+  surveys <- dbGetQuery(con, "SELECT survey_id, password_hash FROM surveys")
   if (nrow(surveys) == 0) return(list())
 
-  setNames(lapply(seq_len(nrow(surveys)), function(i) {
-    row <- surveys[i, ]
-    list(password = row$password_hash, created = row$created_at, qcount = NA_integer_)
-  }), surveys$survey_id)
+  setNames(lapply(surveys$password_hash, function(password) list(password = password)), surveys$survey_id)
 })
 
 load_survey_info <- function(survey_id) with_db({
@@ -133,19 +130,13 @@ load_groups <- function(survey_id) with_db({
 
   questions <- dbGetQuery(con, "SELECT question_id FROM questions WHERE survey_id = ? ORDER BY order_index",
                           list(survey_id))$question_id
-  split_legacy_group <- nrow(groups) == 0
-
-  if (split_legacy_group) {
-    inherited_settings <- if (nrow(groups) == 1) groups$settings_json[1] else "{}"
-    if (nrow(groups) == 1) {
-      dbExecute(con, "DELETE FROM question_groups WHERE survey_id = ?", list(survey_id))
-    }
+  if (nrow(groups) == 0) {
     for (i in seq_along(questions)) {
       group_id <- UUIDgenerate()
       dbExecute(con, "
         INSERT INTO question_groups (group_id, survey_id, title, order_index, settings_json)
         VALUES (?, ?, ?, ?, ?)
-      ", list(group_id, survey_id, paste0("設問グループ", i), i - 1, inherited_settings))
+      ", list(group_id, survey_id, paste0("設問グループ", i), i - 1, "{}"))
       dbExecute(con, "UPDATE questions SET group_id = ? WHERE question_id = ?",
                 list(group_id, questions[i]))
     }

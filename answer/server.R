@@ -1,5 +1,4 @@
 library(shiny)
-library(bslib)
 
 source("../common/db.R")
 

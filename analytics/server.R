@@ -164,7 +164,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single", "single_numeric", "single_text", "select", "multiple", "date", "numeric", "slider"),
+      function(q) q$type %in% c("single_numeric", "single_text", "multiple", "date", "numeric", "slider"),
       logical(1)
     )]
 
@@ -263,7 +263,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single", "single_numeric", "single_text", "select", "multiple", "date", "numeric", "slider"),
+      function(q) q$type %in% c("single_numeric", "single_text", "multiple", "date", "numeric", "slider"),
       logical(1)
     )]
 

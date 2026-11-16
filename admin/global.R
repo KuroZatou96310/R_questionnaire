@@ -186,8 +186,7 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
               span(class = "question-type", switch(question$type,
                 single_numeric = "択一選択（数字）", single_text = "択一選択（テキスト）",
                 numeric = "自由記載（数字）", text = "自由記載（テキスト）",
-                multiple = "複数選択", select = "択一選択（テキスト）", slider = "スライダー", date = "日付",
-                single = "択一選択（テキスト）", question$type
+                multiple = "複数選択", slider = "スライダー", date = "日付", question$type
               ))
             ),
             if (!is.null(question$desc) && length(question$desc) && !is.na(question$desc) && nzchar(question$desc)) {
