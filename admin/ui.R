@@ -26,7 +26,8 @@ shinyUI(fluidPage(
       hr(),
 
       actionButton("save_survey", "アンケートを保存",
-                   style = "color:white;background:#0072B2;width:100%;font-weight:bold;")
+                   style = "color:white;background:#0072B2;width:100%;font-weight:bold;"),
+      uiOutput("access_link_ui")
     ),
     
     mainPanel(

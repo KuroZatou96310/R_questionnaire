@@ -120,6 +120,19 @@ shinyServer(function(input, output, session) {
   active_group_settings <- reactiveVal(NULL)
   group_settings_draft <- reactiveVal(list())
 
+  output$access_link_ui <- renderUI({
+    survey_id <- current_id()
+    if (is.null(survey_id) || !nzchar(survey_id)) return(NULL)
+    tags$a(
+      href = paste0("../Access/?id=", utils::URLencode(survey_id, reserved = TRUE)),
+      target = "_blank",
+      rel = "noopener",
+      class = "btn btn-default",
+      style = "width:100%; margin-top:10px;",
+      "QRコードを生成"
+    )
+  })
+
   observeEvent(input$toggle_question, {
     question_id <- input$toggle_question
     req(question_id %in% names(store$questions))
