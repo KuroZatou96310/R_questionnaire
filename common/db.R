@@ -194,12 +194,21 @@ load_questions <- function(survey_id) with_db({
       options <- enc2utf8(as.character(unlist(options, use.names = FALSE)))
     }
     settings <- tryCatch(fromJSON(row$settings_json, simplifyVector = FALSE), error = function(e) list())
+    question_type <- as.character(row$type)
+    if (identical(question_type, "single")) {
+      numeric_options <- suppressWarnings(as.numeric(options))
+      question_type <- if (length(numeric_options) > 0 && all(is.finite(numeric_options))) "single_numeric" else "single_text"
+    }
+    if (identical(question_type, "select")) {
+      question_type <- "single_text"
+      settings$display <- "dropdown"
+    }
     list(
       id = enc2utf8(as.character(row$question_id)),
       group_id = if (is.na(row$group_id) || !nzchar(row$group_id)) NA_character_ else as.character(row$group_id),
       title = enc2utf8(as.character(row$title)),
       desc = enc2utf8(as.character(row$description)),
-      type = as.character(row$type),
+      type = question_type,
       options = options,
       settings = settings,
       min = if (is.na(row$min_value)) NULL else row$min_value,

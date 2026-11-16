@@ -6,7 +6,7 @@ likert_preset_questions <- function(items, max_score = 5, prefix = "") {
   lapply(seq_along(items), function(i) list(
     title = paste0(prefix, items[[i]]),
     desc = paste0("1〜", max_score, "で回答してください。"),
-    type = "single",
+    type = "single_numeric",
     options = as.character(seq_len(max_score)),
     min = NULL,
     max = NULL
@@ -150,7 +150,7 @@ shinyServer(function(input, output, session) {
       if (!is.null(description)) question$desc <- description
       if (!is.null(type)) question$type <- type
 
-      if (question$type %in% c("single", "multiple", "select")) {
+      if (question$type %in% c("single", "single_text", "multiple", "select")) {
         option_text <- input[[paste0("question_edit_options_", question_id)]]
         if (!is.null(option_text)) {
           options <- trimws(strsplit(option_text, "\n", fixed = TRUE)[[1]])
@@ -161,10 +161,11 @@ shinyServer(function(input, output, session) {
         question$options <- NULL
       }
 
-      if (question$type == "slider") {
+      if (question$type %in% c("slider", "single_numeric", "numeric")) {
         for (field in c("min", "max")) {
           value <- input[[paste0("question_edit_", field, "_", question_id)]]
-          if (!is.null(value)) question[[field]] <- suppressWarnings(as.numeric(value))
+          if (is.null(value) || !length(value) || is.na(value)) question[[field]] <- NULL
+          else question[[field]] <- suppressWarnings(as.numeric(value))
         }
       } else {
         question$min <- question$max <- NULL
@@ -178,6 +179,16 @@ shinyServer(function(input, output, session) {
         if (!is.null(randomize)) settings$randomize_choices <- isTRUE(randomize)
         if (!is.null(required)) settings$required <- isTRUE(required)
         question$settings <- settings
+      }
+      display <- input[[paste0("question_edit_display_", question_id)]]
+      if (!is.null(display)) {
+        if (is.null(question$settings)) question$settings <- list()
+        question$settings$display <- display
+      }
+      long_text <- input[[paste0("question_long_text_", question_id)]]
+      if (!is.null(long_text)) {
+        if (is.null(question$settings)) question$settings <- list()
+        question$settings$long_text <- isTRUE(long_text)
       }
       questions[[question_id]] <- question
     }
@@ -515,10 +526,12 @@ shinyServer(function(input, output, session) {
             switch(
               q$type,
               "single"   = radioButtons(paste0("p_", id), label, choices = opts),
+              "single_numeric" = radioButtons(paste0("p_", id), label, choices = opts),
+              "single_text" = if (identical(q$settings$display, "dropdown")) selectInput(paste0("p_", id), label, choices = opts) else radioButtons(paste0("p_", id), label, choices = opts),
               "multiple" = checkboxGroupInput(paste0("p_", id), label, choices = opts),
               "select"   = selectInput(paste0("p_", id), label, choices = opts),
-              "numeric"  = numericInput(paste0("p_", id), label, value = NA),
-              "text"     = textAreaInput(paste0("p_", id), label),
+              "numeric"  = numericInput(paste0("p_", id), label, value = NA, min = q$min, max = q$max, step = "any"),
+              "text"     = if (isTRUE(q$settings$long_text)) textAreaInput(paste0("p_", id), label) else textInput(paste0("p_", id), label),
               "slider"   = sliderInput(paste0("p_", id), label, min = q$min, max = q$max, value = q$min),
               "date"     = dateInput(paste0("p_", id), label, value = Sys.Date())
             )
@@ -553,7 +566,17 @@ shinyServer(function(input, output, session) {
       question$title <- title
       question$desc <- input[[paste0("question_edit_desc_", qid)]]
       question$type <- type
-      if (type %in% c("single", "multiple", "select")) {
+      if (identical(type, "single_numeric")) {
+        minimum <- input[[paste0("question_edit_min_", qid)]]
+        maximum <- input[[paste0("question_edit_max_", qid)]]
+        if (is.null(minimum) || is.null(maximum) || is.na(minimum) || is.na(maximum) || minimum > maximum || minimum != floor(minimum) || maximum != floor(maximum)) {
+          showNotification("数字択一の範囲は整数で指定してください。", type = "error")
+          return()
+        }
+        question$min <- minimum
+        question$max <- maximum
+        question$options <- as.character(seq.int(minimum, maximum))
+      } else if (type %in% c("single", "single_text", "multiple", "select")) {
         option_text <- input[[paste0("question_edit_options_", qid)]]
         options <- trimws(strsplit(gsub("\r\n?", "\n", if (is.null(option_text)) "" else option_text), "\n", fixed = TRUE)[[1]])
         options <- options[nzchar(options)]
@@ -563,18 +586,30 @@ shinyServer(function(input, output, session) {
         }
         question$options <- options
       } else question$options <- NULL
-      if (type == "slider") {
-        question$min <- input[[paste0("question_edit_min_", qid)]]
-        question$max <- input[[paste0("question_edit_max_", qid)]]
-        if (is.null(question$max) || question$max <= question$min) {
+      if (type %in% c("slider", "numeric")) {
+        minimum <- input[[paste0("question_edit_min_", qid)]]
+        maximum <- input[[paste0("question_edit_max_", qid)]]
+        if (is.null(minimum) || !length(minimum) || is.na(minimum)) minimum <- NULL
+        if (is.null(maximum) || !length(maximum) || is.na(maximum)) maximum <- NULL
+        question$min <- minimum
+        question$max <- maximum
+        if (type == "slider" && (is.null(question$max) || question$max <= question$min)) {
           showNotification("上限は下限より大きくしてください。", type = "error")
           return()
         }
-      } else question$min <- question$max <- NULL
+        if (type == "numeric" && !is.null(question$min) && !is.null(question$max) && question$min > question$max) {
+          showNotification("上限は下限以上にしてください。", type = "error")
+          return()
+        }
+      } else if (type != "single_numeric") {
+        question$min <- question$max <- NULL
+      }
       if (!is.null(input[[paste0("question_randomize_choices_", qid)]])) {
         question$settings <- list(
           randomize_choices = isTRUE(input[[paste0("question_randomize_choices_", qid)]]),
-          required = isTRUE(input[[paste0("question_required_", qid)]])
+          required = isTRUE(input[[paste0("question_required_", qid)]]),
+          display = input[[paste0("question_edit_display_", qid)]],
+          long_text = isTRUE(input[[paste0("question_long_text_", qid)]])
         )
       }
       questions_to_save[[qid]] <- question

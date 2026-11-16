@@ -60,10 +60,11 @@ question_plot <- function(data, question) {
   values <- question_values(data, question)
   switch(question$type,
     single = frequency_plot(values, question$title, categories = question$options),
+    single_text = frequency_plot(values, question$title, categories = question$options),
     select = frequency_plot(values, question$title, categories = question$options),
     date = frequency_plot(values, question$title, "#AF7AA1", question$options),
     multiple = frequency_plot(values, question$title, "#F28E2B", question$options),
-    numeric = , slider = {
+    numeric = , single_numeric = , slider = {
       data <- data.frame(value = suppressWarnings(as.numeric(values)))
       ggplot2::ggplot(data, ggplot2::aes(x = value)) +
         ggplot2::geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
@@ -77,12 +78,12 @@ question_plot <- function(data, question) {
 }
 
 question_summary <- function(data, question) {
-  if (question$type %in% c("single", "select", "date", "multiple")) {
+  if (question$type %in% c("single", "single_text", "select", "date", "multiple")) {
     result <- as.data.frame(table(question_values(data, question)), stringsAsFactors = FALSE)
     names(result) <- if (question$type == "date") c("日付", "件数") else c("回答", "件数")
     return(result)
   }
-  if (question$type %in% c("numeric", "slider")) {
+  if (question$type %in% c("numeric", "single_numeric", "slider")) {
     values <- suppressWarnings(as.numeric(as.character(data$answer_text)))
     return(data.frame(
       key = c("平均", "中央値", "最小", "最大", "標準偏差"),

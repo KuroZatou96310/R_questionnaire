@@ -7,9 +7,19 @@ shinyServer(function(input, output, session){
 
   survey_questions <- reactiveVal(NULL)
   survey_groups <- reactiveVal(NULL)
+  loaded_survey_id <- reactiveVal(NULL)
   active_group <- reactiveVal(NULL)
   answer_values <- reactiveValues()
   submitted <- reactiveVal(FALSE)
+
+  output$load_panel_ui <- renderUI({
+    if (!is.null(survey_questions())) return(NULL)
+    div(
+      class = "load-card",
+      textInput("survey_id", "アンケートID", placeholder = "例：survey-001"),
+      actionButton("load", "アンケートを読み込む", class = "btn-primary")
+    )
+  })
 
   load_survey <- function(id) {
     groups <- load_groups(id)
@@ -25,6 +35,7 @@ shinyServer(function(input, output, session){
     qs <- randomize_survey_questions(qs, groups)
 
     survey_groups(groups)
+    loaded_survey_id(id)
     survey_questions(qs)
     active_group(names(groups)[1])
     for (question_id in names(answer_values)) answer_values[[question_id]] <- NULL
@@ -129,15 +140,15 @@ shinyServer(function(input, output, session){
     tagList(
       div(class = "survey-card",
         div(class = "survey-id", "回答するアンケート"),
-        h2(class = "h4 mb-0", input$survey_id),
+        h2(class = "h4 mb-0", loaded_survey_id()),
         p(paste0("ページ ", group_index, " / ", length(page_ids)))
       ),
       lapply(page_group_ids, function(group_id) {
         group_question_ids <- names(qs)[vapply(qs, function(q) identical(q$group_id, group_id), logical(1))]
         group <- groups[[group_id]]
         tagList(
-          if (length(page_group_ids) > 1) h3(group$title),
-          lapply(group_question_ids, function(id) answer_question_ui(qs[[id]], current_answer(id)))
+          if (length(page_group_ids) > 1) h3(class = "group-heading", group$title),
+          lapply(group_question_ids, function(id) answer_question_ui(qs[[id]], isolate(current_answer(id))))
         )
       }),
       div(class = "group-navigation",
@@ -204,7 +215,7 @@ shinyServer(function(input, output, session){
     names(answers) <- visible_questions
 
     save_response(
-      input$survey_id,
+      loaded_survey_id(),
       answers
     )
 

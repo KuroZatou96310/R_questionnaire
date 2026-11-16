@@ -53,8 +53,19 @@ question_options_ui <- function(question_id, question) {
   if (is.null(settings)) settings <- list()
   randomize_id <- paste0("question_randomize_choices_", question_id)
   required_id <- paste0("question_required_", question_id)
+  display_id <- paste0("question_edit_display_", question_id)
+  long_text_id <- paste0("question_long_text_", question_id)
 
   tagList(
+    conditionalPanel(
+      condition = sprintf("input['question_edit_type_%s'] == 'single_text'", question_id),
+      selectInput(display_id, "表示方法", choices = c("選択肢を表示" = "radio", "プルダウン" = "dropdown"),
+                  selected = if (identical(settings$display, "dropdown")) "dropdown" else "radio")
+    ),
+    conditionalPanel(
+      condition = sprintf("input['question_edit_type_%s'] == 'text'", question_id),
+      checkboxInput(long_text_id, "長文入力", isTRUE(settings$long_text))
+    ),
     checkboxInput(randomize_id, "選択肢をランダム表示", isTRUE(settings$randomize_choices)),
     checkboxInput(required_id, "回答必須", if (is.null(settings$required)) TRUE else isTRUE(settings$required)),
     NULL
@@ -68,12 +79,22 @@ question_editor_panel_ui <- function(question_id, question) {
     textInput(paste0("question_edit_title_", suffix), "設問タイトル", value = question$title),
     textAreaInput(paste0("question_edit_desc_", suffix), "説明（任意）", value = question$desc),
     selectInput(paste0("question_edit_type_", suffix), "回答形式",
-      choices = c("単一選択" = "single", "複数選択" = "multiple", "プルダウン" = "select", "数値" = "numeric", "自由記述" = "text", "スライダー" = "slider", "日付" = "date"),
+      choices = c("択一選択（数字）" = "single_numeric", "択一選択（テキスト）" = "single_text", "複数選択" = "multiple", "自由記載（数字）" = "numeric", "自由記載（テキスト）" = "text", "スライダー" = "slider", "日付" = "date"),
       selected = question$type
     ),
     conditionalPanel(
-      condition = sprintf("input['question_edit_type_%s'] == 'single' || input['question_edit_type_%s'] == 'multiple' || input['question_edit_type_%s'] == 'select'", suffix, suffix, suffix),
+      condition = sprintf("input['question_edit_type_%s'] == 'single_text' || input['question_edit_type_%s'] == 'multiple'", suffix, suffix),
       textAreaInput(paste0("question_edit_options_", suffix), "選択肢（1行に1つ）", value = options_text)
+    ),
+    conditionalPanel(
+      condition = sprintf("input['question_edit_type_%s'] == 'single_numeric'", suffix),
+      numericInput(paste0("question_edit_min_", suffix), "下限", value = if (is.null(question$min)) if (length(question$options)) min(as.numeric(question$options), na.rm = TRUE) else 1 else question$min, step = 1),
+      numericInput(paste0("question_edit_max_", suffix), "上限", value = if (is.null(question$max)) if (length(question$options)) max(as.numeric(question$options), na.rm = TRUE) else 5 else question$max, step = 1)
+    ),
+    conditionalPanel(
+      condition = sprintf("input['question_edit_type_%s'] == 'numeric'", suffix),
+      numericInput(paste0("question_edit_min_", suffix), "下限（任意）", value = question$min, step = "any"),
+      numericInput(paste0("question_edit_max_", suffix), "上限（任意）", value = question$max, step = "any")
     ),
     conditionalPanel(
       condition = sprintf("input['question_edit_type_%s'] == 'slider'", suffix),
@@ -162,13 +183,18 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
             div(class = "question-card-heading",
               span(class = "drag-grip", `aria-hidden` = "true", "⠿"),
               strong(title),
-              span(class = "question-type", question$type)
+              span(class = "question-type", switch(question$type,
+                single_numeric = "択一選択（数字）", single_text = "択一選択（テキスト）",
+                numeric = "自由記載（数字）", text = "自由記載（テキスト）",
+                multiple = "複数選択", select = "択一選択（テキスト）", slider = "スライダー", date = "日付",
+                single = "択一選択（テキスト）", question$type
+              ))
             ),
             if (!is.null(question$desc) && length(question$desc) && !is.na(question$desc) && nzchar(question$desc)) {
               div(class = "question-description", question$desc)
             },
-            if (!is.null(question$options)) div(class = "question-options", paste("選択肢:", paste(unlist(question$options), collapse = ", "))),
-            if (!is.null(question$min) && question$type == "slider") div(class = "question-options", paste0("範囲: ", question$min, "〜", question$max)),
+            if (!is.null(question$options) && question$type != "single_numeric") div(class = "question-options", paste("選択肢:", paste(unlist(question$options), collapse = ", "))),
+            if (!is.null(question$min) && question$type %in% c("single_numeric", "numeric", "slider")) div(class = "question-options", paste0("範囲: ", question$min, "〜", question$max)),
             div(class = "question-actions",
               tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (up_disabled) "disabled" else NULL,
                 onclick = sprintf("Shiny.setInputValue('move_question','%s|up',{priority:'event'})", question_id), "↑"),

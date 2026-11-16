@@ -35,6 +35,18 @@ body {
 .load-card .form-group { margin-bottom: 12px; }
 .load-card .btn { display: block; width: 100%; }
 .survey-card { padding: 22px; margin-bottom: 16px; }
+.group-heading {
+  margin: 24px 0 12px;
+  padding: 10px 16px;
+  border-left: 6px solid #287565;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .9);
+  color: #15352f;
+  font-size: clamp(24px, 4vw, 34px);
+  font-weight: 800;
+  line-height: 1.25;
+  box-shadow: 0 4px 12px rgba(20, 60, 45, .12);
+}
 .survey-id { color: #85899B; font-size: 13px; }
 .question-card { padding: 22px 24px 14px; margin: 14px 0; }
 .question-card:focus-within { position: relative; z-index: 1000; }
