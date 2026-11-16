@@ -1,11 +1,11 @@
 # UI helpers for editing questions and their groups.
 
-insert_question_button <- function(payload) {
+insert_question_button <- function(payload, final = FALSE) {
   tags$button(
     type = "button",
-    class = "insert-question-button",
+    class = paste("insert-question-button", if (final) "insert-question-button-final" else ""),
     onclick = sprintf("Shiny.setInputValue('insert_question','%s',{priority:'event'})", payload),
-    "+"
+    "設問を追加"
   )
 }
 
@@ -118,7 +118,7 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
   if (!length(question_order)) {
     return(tagList(
       p("設問はまだありません。"),
-      insert_question_button("new")
+      insert_question_button("new", final = TRUE)
     ))
   }
 
@@ -148,10 +148,10 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
       tagList(
         div(class = "question-row", `data-question-id` = question_id,
           span(class = "question-number", paste0(question_number, ".")),
-          div(class = paste("question-card", if (settings_open) "question-card-open" else ""), `data-question-id` = question_id,
+          div(class = paste("question-card", if (settings_open) "question-card-open" else ""), `data-question-id` = question_id, draggable = "true",
             onclick = "if (!event.target.closest('button,input,textarea,select,label,.drag-handle,.question-detail-panel')) this.classList.toggle('question-card-open')",
             div(class = "question-card-heading",
-              span(class = "drag-handle", title = "ここをつかんでドラッグして並べ替え", draggable = "true", "⠿ ドラッグ"),
+              span(class = "drag-grip", `aria-hidden` = "true", "⠿"),
               strong(title),
               span(class = "question-type", question$type)
             ),
@@ -186,6 +186,7 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
     div(class = paste("group-card", if (length(question_ids) > 1) "multi-question-group" else "single-question-group"),
       `data-group-id` = group_id,
       if (length(question_ids) > 1) div(class = "group-options-row",
+        strong(class = "group-title", group$title),
         tags$button(type = "button", class = "btn btn-default btn-sm",
           onclick = sprintf("Shiny.setInputValue('toggle_group_settings','%s',{priority:'event'})", group_id),
           "グループ設定")
@@ -198,7 +199,10 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
     list(insert_question_button(paste("before_group", group_order[1], sep = "|"))),
     unlist(lapply(seq_along(group_cards), function(i) list(
       group_cards[[i]],
-      insert_question_button(paste("after_group", group_order[i], sep = "|"))
+      insert_question_button(
+        paste("after_group", group_order[i], sep = "|"),
+        final = i == length(group_cards)
+      )
     )), recursive = FALSE)
   )
 

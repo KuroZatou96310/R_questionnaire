@@ -3,8 +3,8 @@ library(shiny)
 # Define UI for application that plots random distributions 
 shinyUI(fluidPage(
   tags$head(
-    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261116-1"),
-    tags$script(src = "questionnaire-dnd.js?v=20261116-1")
+    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261116-3"),
+    tags$script(src = "questionnaire-dnd.js?v=20261116-2")
   ),
   titlePanel("アンケート生成アプリ（admin）"),
   

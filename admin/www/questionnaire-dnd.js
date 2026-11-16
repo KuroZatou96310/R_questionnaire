@@ -45,15 +45,33 @@
   }
   function sendLayout() {
     const board = root(); if (!board || !window.Shiny) return;
-    const layout = Array.from(board.querySelectorAll('.group-card')).map((group) => ({
+    const groups = Array.from(board.querySelectorAll('.group-card')).map((group) => ({
       group_id: group.dataset.groupId,
       question_ids: Array.from(group.querySelectorAll(':scope > .question-list > .question-row')).map((row) => row.dataset.questionId)
     }));
-    Shiny.setInputValue('group_layout', JSON.stringify(layout), { priority: 'event' });
+    const read = (id) => document.getElementById(id);
+    const value = (id) => read(id)?.value ?? null;
+    const checked = (id) => read(id)?.checked ?? null;
+    const question_drafts = Array.from(board.querySelectorAll('.question-row')).map((row) => {
+      const id = row.dataset.questionId;
+      return {
+        id,
+        title: value(`question_edit_title_${id}`),
+        desc: value(`question_edit_desc_${id}`),
+        type: value(`question_edit_type_${id}`),
+        options: value(`question_edit_options_${id}`),
+        min: value(`question_edit_min_${id}`),
+        max: value(`question_edit_max_${id}`),
+        randomize_choices: checked(`question_randomize_choices_${id}`),
+        required: checked(`question_required_${id}`)
+      };
+    });
+    Shiny.setInputValue('group_layout', JSON.stringify({ groups, question_drafts }), { priority: 'event' });
   }
   document.addEventListener('dragstart', (event) => {
-    const handle = event.target.closest?.('.drag-handle') || event.composedPath().find((node) => node instanceof Element && node.matches('.drag-handle'));
-    const card = handle?.closest('.question-card');
+    const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const card = eventTarget?.closest('.question-card');
+    if (eventTarget?.closest('button,input,textarea,select,label')) { event.preventDefault(); return; }
     if (!card || !root()?.contains(card)) { event.preventDefault(); return; }
     dragged = card.closest('.question-row'); sourceGroup = card.closest('.group-card');
     event.dataTransfer.setData('text/plain', card.dataset.questionId); event.dataTransfer.effectAllowed = 'move';

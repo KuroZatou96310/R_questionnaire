@@ -121,6 +121,50 @@ shinyServer(function(input, output, session) {
   active_group_settings <- reactiveVal(NULL)
   group_settings_draft <- reactiveVal(list())
 
+  capture_question_editor_inputs <- function(questions) {
+    for (question_id in names(questions)) {
+      question <- questions[[question_id]]
+      title <- input[[paste0("question_edit_title_", question_id)]]
+      description <- input[[paste0("question_edit_desc_", question_id)]]
+      type <- input[[paste0("question_edit_type_", question_id)]]
+      if (!is.null(title)) question$title <- title
+      if (!is.null(description)) question$desc <- description
+      if (!is.null(type)) question$type <- type
+
+      if (question$type %in% c("single", "multiple", "select")) {
+        option_text <- input[[paste0("question_edit_options_", question_id)]]
+        if (!is.null(option_text)) {
+          options <- trimws(strsplit(option_text, "\n", fixed = TRUE)[[1]])
+          options <- options[nzchar(options)]
+          question$options <- if (length(options)) options else NULL
+        }
+      } else {
+        question$options <- NULL
+      }
+
+      if (question$type == "slider") {
+        for (field in c("min", "max")) {
+          value <- input[[paste0("question_edit_", field, "_", question_id)]]
+          if (!is.null(value)) question[[field]] <- suppressWarnings(as.numeric(value))
+        }
+      } else {
+        question$min <- question$max <- NULL
+      }
+
+      randomize <- input[[paste0("question_randomize_choices_", question_id)]]
+      required <- input[[paste0("question_required_", question_id)]]
+      if (!is.null(randomize) || !is.null(required)) {
+        settings <- question$settings
+        if (is.null(settings)) settings <- list()
+        if (!is.null(randomize)) settings$randomize_choices <- isTRUE(randomize)
+        if (!is.null(required)) settings$required <- isTRUE(required)
+        question$settings <- settings
+      }
+      questions[[question_id]] <- question
+    }
+    questions
+  }
+
 
   # ---------- 既存アンケート読み込み ----------
   observeEvent(input$load_survey, {
@@ -260,7 +304,7 @@ shinyServer(function(input, output, session) {
     qid <- input$group_question
     target_id <- input$group_target_id
     req(qid %in% names(store$questions), target_id %in% store$group_order)
-    questions <- store$questions
+    questions <- capture_question_editor_inputs(store$questions)
     source_id <- questions[[qid]]$group_id
     questions[[qid]]$group_id <- target_id
     groups <- store$groups
@@ -277,7 +321,7 @@ shinyServer(function(input, output, session) {
   observeEvent(input$split_question, {
     qid <- input$split_question
     req(qid %in% names(store$questions))
-    questions <- store$questions
+    questions <- capture_question_editor_inputs(store$questions)
     source_id <- questions[[qid]]$group_id
     ids <- store$order[vapply(questions[store$order], function(q) identical(q$group_id, source_id), logical(1))]
     if (length(ids) < 2) return()
@@ -294,6 +338,7 @@ shinyServer(function(input, output, session) {
     parts <- strsplit(input$move_question, "|", fixed = TRUE)[[1]]
     req(length(parts) == 2, parts[1] %in% names(store$questions))
     qid <- parts[1]
+    store$questions <- capture_question_editor_inputs(store$questions)
     group_id <- store$questions[[qid]]$group_id
     ids <- store$order[vapply(store$questions[store$order], function(q) identical(q$group_id, group_id), logical(1))]
     if (length(ids) > 1) {
@@ -317,7 +362,9 @@ shinyServer(function(input, output, session) {
   })
 
   observeEvent(input$group_layout, {
-    layout <- tryCatch(jsonlite::fromJSON(input$group_layout, simplifyVector = FALSE), error = function(e) NULL)
+    payload <- tryCatch(jsonlite::fromJSON(input$group_layout, simplifyVector = FALSE), error = function(e) NULL)
+    if (is.null(payload)) return()
+    layout <- if (is.list(payload) && !is.null(payload$groups)) payload$groups else payload
     if (is.null(layout) || !length(layout)) return()
 
     group_ids <- vapply(layout, function(group) as.character(group$group_id), character(1))
@@ -331,7 +378,37 @@ shinyServer(function(input, output, session) {
       return()
     }
 
-    questions <- store$questions
+    questions <- capture_question_editor_inputs(store$questions)
+    question_drafts <- if (is.list(payload) && !is.null(payload$question_drafts)) payload$question_drafts else list()
+    for (draft in question_drafts) {
+      question_id <- as.character(draft$id)
+      if (length(question_id) != 1 || is.na(question_id) || !question_id %in% names(questions)) next
+      question <- questions[[question_id]]
+      for (field in c("title", "desc", "type")) {
+        if (!is.null(draft[[field]])) question[[field]] <- as.character(draft[[field]])
+      }
+      if (!is.null(draft$options)) {
+        options <- trimws(strsplit(as.character(draft$options), "\n", fixed = TRUE)[[1]])
+        options <- options[nzchar(options)]
+        question$options <- if (length(options)) options else NULL
+      }
+      for (field in c("min", "max")) {
+        value <- draft[[field]]
+        value_text <- if (is.null(value) || !length(value)) "" else as.character(value)
+        if (length(value_text) == 1 && !is.na(value_text) && nzchar(value_text)) {
+          question[[field]] <- suppressWarnings(as.numeric(value))
+        }
+      }
+      if (!is.null(draft$randomize_choices) || !is.null(draft$required)) {
+        settings <- question$settings
+        if (is.null(settings)) settings <- list()
+        question$settings <- modifyList(settings, list(
+          randomize_choices = isTRUE(draft$randomize_choices),
+          required = isTRUE(draft$required)
+        ))
+      }
+      questions[[question_id]] <- question
+    }
     for (group in layout) {
       group_id <- as.character(group$group_id)
       for (question_id in unlist(group$question_ids, use.names = FALSE)) {
@@ -370,6 +447,7 @@ shinyServer(function(input, output, session) {
     payload <- strsplit(input$insert_question, "|", fixed = TRUE)[[1]]
     if (!length(payload) || !nzchar(payload[1])) return()
     kind <- payload[1]
+    store$questions <- capture_question_editor_inputs(store$questions)
     qid <- UUIDgenerate()
     new_group <- kind %in% c("new", "before_group", "after_group")
     groups <- store$groups
@@ -419,8 +497,9 @@ shinyServer(function(input, output, session) {
     req(nzchar(id))
     
     req(id %in% names(store$questions))
-    group_id <- store$questions[[id]]$group_id
-    qs <- store$questions
+    questions <- capture_question_editor_inputs(store$questions)
+    group_id <- questions[[id]]$group_id
+    qs <- questions
     qs[[id]] <- NULL
     store$questions <- qs
     store$order     <- store$order[store$order != id]
