@@ -40,6 +40,13 @@ clone_survey_state <- function(questions, question_order, groups, group_order) {
   )
 }
 
+next_group_title <- function(groups) {
+  titles <- vapply(groups, function(group) if (is.null(group$title)) "" else as.character(group$title), character(1))
+  suffixes <- regmatches(titles, regexpr("[0-9]+$", titles))
+  numbers <- suppressWarnings(as.integer(suffixes[nzchar(suffixes)]))
+  paste0("グループ", if (length(numbers)) max(numbers) + 1L else 1L)
+}
+
 question_options_ui <- function(question_id, question) {
   settings <- question$settings
   if (is.null(settings)) settings <- list()
@@ -115,7 +122,7 @@ question_group_settings_ui <- function(group_id, group, previous_questions) {
 }
 
 question_group_board_ui <- function(groups, group_order, questions, question_order, editing_question_options) {
-  if (!length(question_order)) {
+  if (!length(group_order)) {
     return(tagList(
       p("設問はまだありません。"),
       insert_question_button("new", final = TRUE)
@@ -133,6 +140,7 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
       question$group_id %in% previous_group_ids
     }, logical(1))]
     previous_questions <- questions[previous_ids]
+    show_group_frame <- length(question_ids) == 0 || length(question_ids) > 1
 
     question_items <- lapply(seq_along(question_ids), function(question_index) {
       question_id <- question_ids[question_index]
@@ -165,9 +173,6 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
                 onclick = sprintf("Shiny.setInputValue('move_question','%s|up',{priority:'event'})", question_id), "↑"),
               tags$button(type = "button", class = "btn btn-default btn-sm", disabled = if (down_disabled) "disabled" else NULL,
                 onclick = sprintf("Shiny.setInputValue('move_question','%s|down',{priority:'event'})", question_id), "↓"),
-              tags$button(type = "button", class = "btn btn-default btn-sm",
-                onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})", if (length(question_ids) > 1) "split_question" else "group_question", question_id),
-                if (length(question_ids) > 1) "グループから外す" else "グループ化"),
               if (length(question_ids) == 1) tags$button(type = "button", class = "btn btn-default btn-sm",
                 onclick = sprintf("Shiny.setInputValue('toggle_group_settings','%s',{priority:'event'})", group_id), "グループ設定"),
               actionButton(
@@ -183,9 +188,9 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
       )
     })
 
-    div(class = paste("group-card", if (length(question_ids) > 1) "multi-question-group" else "single-question-group"),
+    div(class = if (show_group_frame) "group-card multi-question-group" else "group-card",
       `data-group-id` = group_id,
-      if (length(question_ids) > 1) div(class = "group-options-row",
+      if (show_group_frame) div(class = "group-options-row",
         strong(class = "group-title", group$title),
         tags$button(type = "button", class = "btn btn-default btn-sm",
           onclick = sprintf("Shiny.setInputValue('toggle_group_settings','%s',{priority:'event'})", group_id),
@@ -196,11 +201,10 @@ question_group_board_ui <- function(groups, group_order, questions, question_ord
   })
 
   board_items <- c(
-    list(insert_question_button(paste("before_group", group_order[1], sep = "|"))),
     unlist(lapply(seq_along(group_cards), function(i) list(
       group_cards[[i]],
       insert_question_button(
-        paste("after_group", group_order[i], sep = "|"),
+        if (i == length(group_cards)) "append" else paste("after_group", group_order[i], sep = "|"),
         final = i == length(group_cards)
       )
     )), recursive = FALSE)

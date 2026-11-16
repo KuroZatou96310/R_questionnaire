@@ -133,8 +133,7 @@ load_groups <- function(survey_id) with_db({
 
   questions <- dbGetQuery(con, "SELECT question_id FROM questions WHERE survey_id = ? ORDER BY order_index",
                           list(survey_id))$question_id
-  split_legacy_group <- nrow(groups) == 0 ||
-    (nrow(groups) == 1 && identical(as.character(groups$title[1]), "グループ1") && length(questions) > 1)
+  split_legacy_group <- nrow(groups) == 0
 
   if (split_legacy_group) {
     inherited_settings <- if (nrow(groups) == 1) groups$settings_json[1] else "{}"
@@ -165,10 +164,6 @@ load_groups <- function(survey_id) with_db({
                 list(group_id, question_id))
     }
   }
-
-  dbExecute(con, "DELETE FROM question_groups WHERE survey_id = ? AND NOT EXISTS (
-    SELECT 1 FROM questions WHERE questions.group_id = question_groups.group_id
-  )", list(survey_id))
 
   groups <- dbGetQuery(con, "
     SELECT group_id, title, order_index, settings_json
@@ -238,10 +233,6 @@ save_db <- function(survey_id, password_hash, questions_list, question_ids,
   if (anyNA(question_group_ids) || any(!question_group_ids %in% group_ids)) {
     stop("すべての設問を有効なグループに所属させてください。")
   }
-  if (any(vapply(group_ids, function(id) !any(question_group_ids == id), logical(1)))) {
-    stop("設問のないグループは保存できません。")
-  }
-
   dbBegin(con)
   tryCatch({
     now <- as.character(Sys.time())

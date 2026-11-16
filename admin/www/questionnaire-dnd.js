@@ -1,13 +1,13 @@
 (function () {
   if (window.questionnaireDragDropInstalled) return;
   window.questionnaireDragDropInstalled = true;
-  let dragged = null, sourceGroup = null, target = null, after = false, mode = null, indicator = null;
+  let dragged = null, sourceGroup = null, target = null, after = false, indicator = null;
   const root = () => document.getElementById('question_list_ui');
   function clear() {
-    document.querySelectorAll('.drop-group-target,.drop-target').forEach((el) => el.classList.remove('drop-group-target', 'drop-target'));
+    document.querySelectorAll('.drop-group-target').forEach((el) => el.classList.remove('drop-group-target'));
     indicator?.remove(); indicator = null;
   }
-  function reset() { dragged?.classList.remove('dragging'); dragged = sourceGroup = target = mode = null; clear(); }
+  function reset() { dragged?.classList.remove('dragging'); dragged = sourceGroup = target = null; clear(); }
   function markLine(parent, y) {
     if (!indicator || indicator.parentElement !== parent) {
       indicator?.remove(); indicator = document.createElement('div'); indicator.className = 'drop-position-indicator'; parent.appendChild(indicator);
@@ -27,9 +27,9 @@
       const targetGroup = card.closest('.group-card');
       const rect = row.getBoundingClientRect(); after = event.clientY >= rect.top + rect.height / 2;
       if (targetGroup === sourceGroup) {
-        target = row; mode = 'question'; markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
+        target = row; markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
       } else {
-        target = row; mode = 'join-question'; targetGroup.classList.add('drop-group-target');
+        target = row; targetGroup.classList.add('drop-group-target');
         markLine(targetGroup.querySelector(':scope > .question-list'), after ? rect.bottom : rect.top);
       }
       return true;
@@ -38,7 +38,7 @@
       const list = group.querySelector(':scope > .question-list');
       if (!list) return false;
       target = list.lastElementChild?.matches('.question-row') ? list.lastElementChild : list;
-      mode = 'join-question'; after = true; group.classList.add('drop-group-target');
+      after = true; group.classList.add('drop-group-target');
       markLine(list, list.getBoundingClientRect().bottom); return true;
     }
     return false;
@@ -87,22 +87,12 @@
     clear();
     if (!setTarget(event)) { reset(); return; }
     event.preventDefault();
-    if (mode === 'question' || mode === 'join-question') {
-      const list = target.closest('.question-list');
-      const reference = target === list ? null : (after ? target.nextSibling : target);
-      const oldGroup = dragged.closest('.group-card');
-      const oldGap = dragged.nextElementSibling;
-      if (mode === 'join-question' && oldGap?.matches('.insert-question-button')) oldGap.remove();
-      if (reference !== dragged) list.insertBefore(dragged, reference);
-      if (mode === 'join-question' && oldGroup.querySelectorAll(':scope > .question-list > .question-row').length === 0) {
-        const afterGroup = oldGroup.nextElementSibling;
-        if (afterGroup?.matches('.insert-question-button')) afterGroup.remove();
-        oldGroup.remove();
-      }
-    } else {
-      const reference = after ? target.nextSibling : target;
-      if (reference !== sourceGroup) root().insertBefore(sourceGroup, reference);
-    }
+    const joinsGroup = target.closest('.group-card') !== sourceGroup;
+    const list = target.closest('.question-list');
+    const reference = target === list ? null : (after ? target.nextSibling : target);
+    const oldGap = dragged.nextElementSibling;
+    if (joinsGroup && oldGap?.matches('.insert-question-button')) oldGap.remove();
+    if (reference !== dragged) list.insertBefore(dragged, reference);
     reset(); sendLayout();
   });
   document.addEventListener('dragend', reset);

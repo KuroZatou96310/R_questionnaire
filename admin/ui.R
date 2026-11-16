@@ -1,10 +1,9 @@
 library(shiny)
 
-# Define UI for application that plots random distributions 
 shinyUI(fluidPage(
   tags$head(
-    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261116-3"),
-    tags$script(src = "questionnaire-dnd.js?v=20261116-2")
+    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261116-4"),
+    tags$script(src = "questionnaire-dnd.js?v=20261116-4")
   ),
   titlePanel("アンケート生成アプリ（admin）"),
   
@@ -14,6 +13,7 @@ shinyUI(fluidPage(
       textInput("survey_id",  "アンケートID（空なら自動生成）"),
       passwordInput("survey_pw", "アンケートパスワード（必須）"),
       actionButton("load_survey", "既存アンケートを読み込む"),
+      actionButton("add_group", "グループを追加"),
       hr(),
 
       h4("標準化プリセット"),

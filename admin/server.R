@@ -106,7 +106,6 @@ standard_presets <- list(
   )
 )
 
-# Define server logic required to draw a histogram
 shinyServer(function(input, output, session) {
   
   # 作業中アンケート（順序付き）
@@ -213,46 +212,42 @@ shinyServer(function(input, output, session) {
     preset <- standard_presets[[input$preset_name]]
     req(preset)
 
+    store$questions <- capture_question_editor_inputs(store$questions)
     qs <- store$questions
+    groups <- store$groups
+    group_order <- store$group_order
+    if (!length(group_order)) {
+      group_id <- UUIDgenerate()
+      groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
+      group_order <- c(group_order, group_id)
+    }
+    group_id <- tail(group_order, 1)
     ids <- character(0)
 
     for (template in preset$questions) {
       qid <- UUIDgenerate()
-      group_id <- UUIDgenerate()
       template$id <- qid
       template$group_id <- group_id
       template$settings <- list(randomize_choices = FALSE, required = TRUE)
       qs[[qid]] <- template
-      groups <- store$groups
-      groups[[group_id]] <- list(id = group_id, title = paste0("設問グループ", length(store$group_order) + 1), settings = list(page = FALSE))
-      store$groups <- groups
-      store$group_order <- c(store$group_order, group_id)
       ids <- c(ids, qid)
     }
 
+    store$groups <- groups
+    store$group_order <- group_order
     store$questions <- qs
     store$order <- c(store$order, ids)
     showNotification(paste0(preset$title, "を追加しました。保存して反映してください。"), type = "message")
 
   })
 
-  observeEvent(input$group_question, {
-    qid <- input$group_question
-    req(qid %in% names(store$questions))
-    source_id <- store$questions[[qid]]$group_id
-    targets <- setdiff(store$group_order, source_id)
-    if (!length(targets)) {
-      showNotification("まとめ先のグループがありません。", type = "error")
-      return()
-    }
-    labels <- vapply(targets, function(gid) {
-      ids <- store$order[vapply(store$questions[store$order], function(q) identical(q$group_id, gid), logical(1))]
-      title <- store$questions[[ids[1]]]$title
-      if (is.null(title) || !nzchar(title)) title <- "無題の設問"
-      paste0(title, "（", length(ids), "設問）")
-    }, character(1))
-    showModal(modalDialog("追加先のグループ", selectInput("group_target_id", "グループ", setNames(targets, labels)),
-      footer = tagList(modalButton("キャンセル"), actionButton("group_question_confirm", "グループ化"))))
+  observeEvent(input$add_group, {
+    store$questions <- capture_question_editor_inputs(store$questions)
+    groups <- store$groups
+    group_id <- UUIDgenerate()
+    groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
+    store$groups <- groups
+    store$group_order <- c(store$group_order, group_id)
   })
 
   observeEvent(input$toggle_group_settings, {
@@ -300,40 +295,6 @@ shinyServer(function(input, output, session) {
     }
   })
 
-  observeEvent(input$group_question_confirm, {
-    qid <- input$group_question
-    target_id <- input$group_target_id
-    req(qid %in% names(store$questions), target_id %in% store$group_order)
-    questions <- capture_question_editor_inputs(store$questions)
-    source_id <- questions[[qid]]$group_id
-    questions[[qid]]$group_id <- target_id
-    groups <- store$groups
-    source_ids <- store$order[vapply(questions[store$order], function(q) identical(q$group_id, source_id), logical(1))]
-    if (!length(source_ids)) {
-      groups[[source_id]] <- NULL
-      store$group_order <- setdiff(store$group_order, source_id)
-    }
-    store$questions <- questions
-    store$groups <- groups
-    removeModal()
-  })
-
-  observeEvent(input$split_question, {
-    qid <- input$split_question
-    req(qid %in% names(store$questions))
-    questions <- capture_question_editor_inputs(store$questions)
-    source_id <- questions[[qid]]$group_id
-    ids <- store$order[vapply(questions[store$order], function(q) identical(q$group_id, source_id), logical(1))]
-    if (length(ids) < 2) return()
-    new_id <- UUIDgenerate()
-    questions[[qid]]$group_id <- new_id
-    groups <- store$groups
-    groups[[new_id]] <- list(id = new_id, title = "設問グループ", settings = list(page = FALSE))
-    store$groups <- groups
-    store$group_order <- append(store$group_order, new_id, after = match(source_id, store$group_order))
-    store$questions <- questions
-  })
-
   observeEvent(input$move_question, {
     parts <- strsplit(input$move_question, "|", fixed = TRUE)[[1]]
     req(length(parts) == 2, parts[1] %in% names(store$questions))
@@ -371,7 +332,6 @@ shinyServer(function(input, output, session) {
     question_ids <- unlist(lapply(layout, function(group) unlist(group$question_ids, use.names = FALSE)), use.names = FALSE)
     if (anyNA(group_ids) || any(!nzchar(group_ids)) || anyDuplicated(group_ids) ||
         anyDuplicated(question_ids) || any(!nzchar(question_ids)) ||
-        any(vapply(layout, function(group) !length(unlist(group$question_ids, use.names = FALSE)), logical(1))) ||
         length(question_ids) != length(store$order) ||
         !setequal(question_ids, store$order)) {
       showNotification("ドラッグ後の配置を反映できませんでした。", type = "error")
@@ -449,35 +409,28 @@ shinyServer(function(input, output, session) {
     kind <- payload[1]
     store$questions <- capture_question_editor_inputs(store$questions)
     qid <- UUIDgenerate()
-    new_group <- kind %in% c("new", "before_group", "after_group")
     groups <- store$groups
     group_order <- store$group_order
     order <- store$order
 
-    if (new_group) {
-      if (kind != "new" && (length(payload) < 2 || !payload[2] %in% group_order)) return()
+    if (!length(group_order)) {
       group_id <- UUIDgenerate()
-      position <- if (kind == "before_group") match(payload[2], group_order) else if (kind == "after_group") match(payload[2], group_order) + 1 else length(group_order) + 1
-      if (is.na(position)) position <- length(group_order) + 1
-      groups[[group_id]] <- list(id = group_id, title = paste0("設問グループ", length(groups) + 1), settings = list(page = FALSE))
-      group_order <- append(group_order, group_id, after = position - 1)
-      group_positions <- which(vapply(store$questions[order], function(q) identical(q$group_id, payload[2]), logical(1)))
-      insert_at <- if (kind == "before_group") {
-        if (length(group_positions)) group_positions[1] else length(order) + 1
-      } else if (kind == "after_group") {
-        if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
-      } else length(order) + 1
-    } else {
-      if (length(payload) < 2 || !payload[2] %in% group_order) return()
+      groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
+      group_order <- c(group_order, group_id)
+    }
+    if (kind == "in") {
+      if (length(payload) < 3 || !payload[2] %in% group_order || !payload[3] %in% order ||
+          !identical(store$questions[[payload[3]]]$group_id, payload[2])) return()
       group_id <- payload[2]
-      before_id <- if (length(payload) >= 3) payload[3] else ""
+      insert_at <- match(payload[3], order)
+    } else if (kind == "after_group" && length(payload) >= 2 && payload[2] %in% group_order) {
+      group_id <- payload[2]
       group_positions <- which(vapply(store$questions[order], function(q) identical(q$group_id, group_id), logical(1)))
-      if (nzchar(before_id)) {
-        if (!before_id %in% order || !identical(store$questions[[before_id]]$group_id, group_id)) return()
-        insert_at <- match(before_id, order)
-      } else {
-        insert_at <- if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
-      }
+      insert_at <- if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
+    } else {
+      group_id <- tail(group_order, 1)
+      group_positions <- which(vapply(store$questions[order], function(q) identical(q$group_id, group_id), logical(1)))
+      insert_at <- if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
     }
 
     questions <- store$questions
@@ -491,24 +444,17 @@ shinyServer(function(input, output, session) {
   })
 
   # ---------- 削除 ----------
-  # FIX: NULL代入ではなく取り出して差し替える
   observeEvent(input$delete_q, ignoreInit = TRUE, {
     id <- input$delete_q
     req(nzchar(id))
     
     req(id %in% names(store$questions))
     questions <- capture_question_editor_inputs(store$questions)
-    group_id <- questions[[id]]$group_id
     qs <- questions
     qs[[id]] <- NULL
     store$questions <- qs
     store$order     <- store$order[store$order != id]
     groups <- store$groups
-    group_order <- store$group_order
-    if (!any(vapply(qs, function(question) identical(question$group_id, group_id), logical(1)))) {
-      groups[[group_id]] <- NULL
-      group_order <- setdiff(group_order, group_id)
-    }
     for (group_id in store$group_order) {
       condition <- groups[[group_id]]$settings$visibility
       if (!is.null(condition) && identical(condition$question_id, id)) {
@@ -516,7 +462,6 @@ shinyServer(function(input, output, session) {
       }
     }
     store$groups <- groups
-    store$group_order <- group_order
   })
 
   # ---------- 設問一覧 UI ----------
