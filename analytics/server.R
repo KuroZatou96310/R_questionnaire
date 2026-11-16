@@ -9,6 +9,33 @@ showtext_auto()
 
 source("../common/db.R")
 
+# 積み上げ棒グラフ用の定性カラーパレット。隣り合う選択肢が
+# 一目で区別できるよう、色相を大きく離した色を優先する。
+distinct_category_colors <- function(n) {
+  base <- c(
+    "#0072B2", # blue
+    "#D55E00", # vermillion
+    "#009E73", # green
+    "#CC79A7", # purple
+    "#E69F00", # orange
+    "#333333", # charcoal
+    "#F0E442", # yellow
+    "#56B4E9", # sky blue
+    "#E41A1C", # red
+    "#4DAF4A", # leaf green
+    "#984EA3", # violet
+    "#A65628"  # brown
+  )
+  if (n <= length(base)) return(base[seq_len(n)])
+  extra_n <- n - length(base)
+  extra <- grDevices::hcl(
+    h = seq(15, 375, length.out = extra_n + 1)[seq_len(extra_n)],
+    c = 95,
+    l = 55
+  )
+  c(base, extra)
+}
+
 shinyServer(function(input, output, session){
 
   survey_questions <- reactiveVal(NULL)
@@ -236,7 +263,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single", "select", "multiple", "date"),
+      function(q) q$type %in% c("single", "select", "multiple", "date", "numeric", "slider"),
       logical(1)
     )]
 
@@ -433,10 +460,10 @@ shinyServer(function(input, output, session){
       col_totals <- paste0(format(round(colSums(counts) / total * 100, 1), nsmall = 1, trim = TRUE), "%")
       grand_total <- "100.0%"
     } else {
-      values <- counts
-      row_totals <- rowSums(counts)
-      col_totals <- colSums(counts)
-      grand_total <- sum(counts)
+      values <- matrix(as.character(counts), nrow = nrow(counts), dimnames = dimnames(counts))
+      row_totals <- as.character(rowSums(counts))
+      col_totals <- as.character(colSums(counts))
+      grand_total <- as.character(sum(counts))
     }
 
     values <- cbind(values, "合計" = row_totals)
@@ -552,10 +579,14 @@ shinyServer(function(input, output, session){
     plot_data$group <- factor(plot_data$group)
     plot_data$category <- factor(plot_data$category)
 
+    category_levels <- levels(plot_data$category)
+    category_colors <- distinct_category_colors(length(category_levels))
+    names(category_colors) <- category_levels
+
     ggplot(plot_data, aes(x = group, y = count, fill = category)) +
       geom_col(position = "fill", width = 0.72, color = "white") +
       scale_y_continuous(labels = function(x) paste0(round(x * 100), "%")) +
-      scale_fill_brewer(palette = "Set2", name = fill_label) +
+      scale_fill_manual(values = category_colors, drop = FALSE, name = fill_label) +
       labs(x = x_label, y = "構成比") +
       analysis_theme() +
       theme(axis.text.x = element_text(angle = 20, hjust = 1))
@@ -614,50 +645,18 @@ shinyServer(function(input, output, session){
     }
 
     result <- data.frame(
-      metric = c("カイ二乗値", "自由度", "p値", "Cramér's V"),
+      metric = c("カイ二乗値", "自由度", "p値", "Cramér's V", "期待度数が5未満のセル"),
       value = c(
         sprintf("%.3f", stats$statistic),
         stats$df,
         format.pval(stats$p_value, digits = 3, eps = 0.001),
-        sprintf("%.3f", stats$cramers_v)
+        sprintf("%.3f", stats$cramers_v),
+        sprintf("%.1f%% (%d/%d)", 100 * stats$small_expected / stats$expected_cells,
+                stats$small_expected, stats$expected_cells)
       ),
       check.names = FALSE
     )
     names(result) <- c("指標", "値")
-    result
-
-  }, rownames = FALSE)
-
-  output$crosstab_stats_note <- renderText({
-
-    stats <- crosstab_statistics()
-
-    if (!is.null(stats$message)) return(stats$message)
-
-    if (stats$small_expected > 0) {
-      paste0(
-        "注意：期待度数が5未満のセルが ", stats$small_expected, " / ",
-        stats$expected_cells, " あります。カイ二乗検定の結果は慎重に解釈してください。"
-      )
-    } else {
-      "すべての期待度数が5以上です。"
-    }
-
-  })
-
-  output$crosstab_expected_table <- renderTable({
-
-    stats <- crosstab_statistics()
-
-    if (!is.null(stats$message)) {
-      result <- data.frame(message = stats$message, check.names = FALSE)
-      names(result) <- "案内"
-      return(result)
-    }
-
-    expected <- round(stats$expected, 2)
-    result <- data.frame(row = rownames(expected), expected, check.names = FALSE)
-    names(result)[1] <- "行の選択肢"
     result
 
   }, rownames = FALSE)
@@ -679,6 +678,23 @@ shinyServer(function(input, output, session){
   #-------------------------
   # 数値同士の分析
   #-------------------------
+  spearman_confidence_interval <- function(x, y, repetitions = 2000L) {
+
+    # Spearmanの相関係数には、順位を保ったまま再標本化する
+    # パーセンタイル・ブートストラップ法で信頼区間を求める。
+    n <- length(x)
+    bootstrap_rho <- replicate(repetitions, {
+      rows <- sample.int(n, size = n, replace = TRUE)
+      suppressWarnings(cor(x[rows], y[rows], method = "spearman"))
+    })
+    bootstrap_rho <- bootstrap_rho[is.finite(bootstrap_rho)]
+
+    if (length(bootstrap_rho) < 2) return(c(NA_real_, NA_real_))
+
+    unname(stats::quantile(bootstrap_rho, probs = c(0.025, 0.975), names = FALSE))
+
+  }
+
   numeric_question_ids <- reactive({
 
     req(survey_questions())
@@ -786,15 +802,15 @@ shinyServer(function(input, output, session){
       return(list(message = "相関・回帰分析には、変動のある3件以上の回答が必要です。"))
     }
 
-    pearson <- cor.test(d$x, d$y, method = "pearson")
     spearman <- suppressWarnings(cor.test(d$x, d$y, method = "spearman", exact = FALSE))
+    spearman_ci <- spearman_confidence_interval(d$x, d$y)
     model <- lm(y ~ x, data = d)
     standard_residuals <- rstandard(model)
 
     list(
       data = d,
-      pearson = pearson,
       spearman = spearman,
+      spearman_ci = spearman_ci,
       model = model,
       standard_residuals = standard_residuals,
       outlier_count = sum(abs(standard_residuals) > 2, na.rm = TRUE)
@@ -814,27 +830,23 @@ shinyServer(function(input, output, session){
     }
 
     coefficients <- coef(stats$model)
-    ci <- stats$pearson$conf.int
+    ci <- stats$spearman_ci
 
     result <- data.frame(
       metric = c(
-        "有効回答数",
-        "Pearson相関係数",
-        "Pearson p値",
-        "Pearson 95%信頼区間",
-        "Spearman相関係数",
-        "Spearman p値",
-        "回帰式",
-        "外れ値（標準化残差が±2超）"
+        "有効回答数 n",
+        "相関係数（Spearman ρ）",
+        "p値",
+        "相関の95%信頼区間",
+        "回帰の傾き",
+        "外れ値"
       ),
       value = c(
         nrow(stats$data),
-        sprintf("%.3f", unname(stats$pearson$estimate)),
-        format.pval(stats$pearson$p.value, digits = 3, eps = 0.001),
-        paste0("[", sprintf("%.3f", ci[1]), ", ", sprintf("%.3f", ci[2]), "]"),
         sprintf("%.3f", unname(stats$spearman$estimate)),
         format.pval(stats$spearman$p.value, digits = 3, eps = 0.001),
-        paste0("y = ", sprintf("%.3f", coefficients[1]), " + ", sprintf("%.3f", coefficients[2]), " × x"),
+        paste0("[", sprintf("%.3f", ci[1]), ", ", sprintf("%.3f", ci[2]), "]"),
+        sprintf("%.3f", coefficients[2]),
         stats$outlier_count
       ),
       check.names = FALSE
@@ -844,32 +856,6 @@ shinyServer(function(input, output, session){
     result
 
   }, rownames = FALSE)
-
-  output$numeric_residual_plot <- renderPlot({
-
-    stats <- numeric_relation_statistics()
-
-    if (!is.null(stats$message)) {
-      plot.new()
-      text(0.5, 0.5, stats$message)
-      return()
-    }
-
-    residual_data <- data.frame(
-      fitted = fitted(stats$model),
-      residual = stats$standard_residuals,
-      outlier = abs(stats$standard_residuals) > 2
-    )
-
-    ggplot(residual_data, aes(x = fitted, y = residual, color = outlier)) +
-      geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5) +
-      geom_hline(yintercept = c(-2, 2), color = "#D95F0E", linetype = "dashed") +
-      geom_point(size = 3, alpha = 0.8) +
-      scale_color_manual(values = c("FALSE" = "#2C7FB8", "TRUE" = "#D95F0E"), labels = c("通常", "外れ値候補"), name = NULL) +
-      labs(title = "標準化残差", x = "予測値", y = "標準化残差") +
-      analysis_theme()
-
-  })
 
   # 設問ごとのグラフ・表を同じ描画関数で生成する
   observe({
