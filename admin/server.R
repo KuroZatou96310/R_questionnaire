@@ -3,8 +3,18 @@ source("../common/db.R")
 
 likert_preset_questions <- function(items, max_score = 5, prefix = "") {
   lapply(seq_along(items), function(i) list(
-    title = paste0(prefix, items[[i]]),
-    desc = paste0("1〜", max_score, "で回答してください。"),
+    # プリセット名は設問タイトルに重ねて表示せず、設問本文だけを表示する。
+    title = items[[i]],
+    desc = {
+      endpoints <- trimws(strsplit(items[[i]], "—", fixed = TRUE)[[1]])
+      middle <- ceiling(max_score / 2)
+      scale_description <- if (length(endpoints) >= 2) {
+        paste0("1：", endpoints[[1]], "　", middle, "：どちらともいえない　", max_score, "：", endpoints[[length(endpoints)]])
+      } else {
+        paste0("1：そう思わない　", middle, "：どちらともいえない　", max_score, "：そう思う")
+      }
+      paste0("1〜", max_score, "で回答してください。 ", scale_description)
+    },
     type = "single_numeric",
     options = as.character(seq_len(max_score)),
     min = 1,
