@@ -7,6 +7,8 @@ shinyUI(
 
   fluidPage(
 
+    tags$head(tags$title("アンケート分析画面")),
+
     titlePanel("アンケート分析"),
 
     sidebarLayout(

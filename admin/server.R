@@ -122,13 +122,42 @@ shinyServer(function(input, output, session) {
   output$access_link_ui <- renderUI({
     survey_id <- current_id()
     if (is.null(survey_id) || !nzchar(survey_id)) return(NULL)
-    tags$a(
-      href = paste0("../Access/?id=", utils::URLencode(survey_id, reserved = TRUE)),
-      target = "_blank",
-      rel = "noopener",
-      class = "btn btn-default",
-      style = "width:100%; margin-top:10px;",
-      "QRコードを生成"
+
+    # The browser provides the public protocol, host, and port. Using these
+    # values makes the displayed address match the URL from which admin is
+    # currently being accessed (for example http://localhost:3838).
+    protocol <- session$clientData$url_protocol
+    hostname <- session$clientData$url_hostname
+    port <- session$clientData$url_port
+    admin_path <- session$clientData$url_pathname
+    if (is.null(protocol) || !nzchar(protocol) || is.null(hostname) || !nzchar(hostname)) return(NULL)
+
+    origin <- paste0(protocol, "//", hostname, if (!is.null(port) && nzchar(port)) paste0(":", port) else "")
+    analysis_pathname <- sub("/admin/?$", "/analytics/", admin_path)
+    if (identical(analysis_pathname, admin_path)) analysis_pathname <- "/analytics/"
+    answer_url <- paste0("../Access/?id=", utils::URLencode(survey_id, reserved = TRUE))
+    analysis_url <- paste0(origin, analysis_pathname, "?id=", utils::URLencode(survey_id, reserved = TRUE))
+
+    tagList(
+      tags$a(
+        href = answer_url,
+        target = "_blank",
+        rel = "noopener",
+        class = "btn btn-default",
+        style = "width:100%; margin-top:10px;",
+        "QRコードを生成"
+      ),
+      tags$div(
+        style = "margin-top:12px;word-break:break-all;",
+        tags$strong("分析画面のURL"),
+        tags$br(),
+        tags$a(
+          href = analysis_url,
+          target = "_blank",
+          rel = "noopener",
+          analysis_url
+        )
+      )
     )
   })
 

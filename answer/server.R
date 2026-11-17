@@ -35,6 +35,7 @@ shinyServer(function(input, output, session){
 
     survey_groups(groups)
     loaded_survey_id(id)
+    session$sendCustomMessage("page-title", paste0("アンケート回答（", id, "）"))
     survey_questions(qs)
     active_group(names(groups)[1])
     for (question_id in names(answer_values)) answer_values[[question_id]] <- NULL
