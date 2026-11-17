@@ -211,9 +211,10 @@ load_questions <- function(survey_id) with_db({
 })
 
 save_db <- function(survey_id, password_hash, questions_list, question_ids,
-                    groups_list = list(), group_ids = character()) with_db({
+                    groups_list = list(), group_ids = character(), survey_title = NULL) with_db({
   question_ids <- as.character(question_ids)
   group_ids <- as.character(group_ids)
+  survey_title <- if (is.null(survey_title) || !length(survey_title)) "" else trimws(as.character(survey_title[1]))
   if (!length(question_ids)) stop("アンケートには設問が必要です。")
   if (anyDuplicated(question_ids) || anyDuplicated(group_ids)) stop("設問IDまたはグループIDが重複しています。")
   if (!all(question_ids %in% names(questions_list))) stop("保存対象の設問データが不足しています。")
@@ -246,8 +247,8 @@ save_db <- function(survey_id, password_hash, questions_list, question_ids,
     } else character()
 
     if (!existing) {
-      dbExecute(con, "INSERT INTO surveys (survey_id, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                list(survey_id, password_hash, now, now))
+      dbExecute(con, "INSERT INTO surveys (survey_id, password_hash, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                list(survey_id, password_hash, survey_title, now, now))
     }
 
     for (i in seq_along(group_ids)) {
@@ -298,8 +299,8 @@ save_db <- function(survey_id, password_hash, questions_list, question_ids,
     }
 
     if (existing) {
-      dbExecute(con, "UPDATE surveys SET password_hash = ?, updated_at = ? WHERE survey_id = ?",
-                list(password_hash, now, survey_id))
+      dbExecute(con, "UPDATE surveys SET password_hash = ?, title = ?, updated_at = ? WHERE survey_id = ?",
+                list(password_hash, survey_title, now, survey_id))
     }
     dbCommit(con)
     TRUE

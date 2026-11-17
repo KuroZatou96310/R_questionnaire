@@ -52,7 +52,11 @@ shinyUI(
         downloadButton(
           "download_csv",
           "CSVダウンロード"
-        )
+        ),
+
+        hr(),
+
+        uiOutput("access_link_ui")
 
       ),
 

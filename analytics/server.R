@@ -41,6 +41,75 @@ shinyServer(function(input, output, session){
   survey_questions <- reactiveVal(NULL)
   survey_answers   <- reactiveVal(NULL)
   survey_response_count <- reactiveVal(0L)
+  loaded_survey_id <- reactiveVal(NULL)
+
+  observeEvent(getQueryString(), {
+    survey_id <- getQueryString()$id
+    if (!is.null(survey_id) && length(survey_id) && nzchar(trimws(survey_id))) {
+      survey_id <- trimws(survey_id)
+      updateTextInput(session, "survey_id", value = survey_id)
+    }
+  }, ignoreInit = FALSE)
+
+  output$access_link_ui <- renderUI({
+    survey_id <- loaded_survey_id()
+    if (is.null(survey_id) || !nzchar(survey_id)) return(NULL)
+
+    protocol <- session$clientData$url_protocol
+    hostname <- session$clientData$url_hostname
+    port <- session$clientData$url_port
+    analytics_path <- session$clientData$url_pathname
+    if (is.null(protocol) || !nzchar(protocol) || is.null(hostname) || !nzchar(hostname)) return(NULL)
+
+    origin <- paste0(protocol, "//", hostname, if (!is.null(port) && nzchar(port)) paste0(":", port) else "")
+    app_prefix <- sub("/(admin|analytics)/?$", "", analytics_path)
+    if (identical(app_prefix, analytics_path)) app_prefix <- ""
+    app_url <- function(path, with_id = FALSE) {
+      paste0(origin, app_prefix, "/", path, "/", if (with_id) paste0("?id=", utils::URLencode(survey_id, reserved = TRUE)) else "")
+    }
+    answer_url <- app_url("answer", with_id = TRUE)
+    qr_url <- app_url("Access", with_id = TRUE)
+    admin_url <- app_url("admin", with_id = TRUE)
+    analysis_url <- app_url("analytics", with_id = TRUE)
+
+    tagList(
+      tags$div(
+        style = "margin-top:12px;word-break:break-all;",
+        tags$strong("URL集"),
+        tags$div(
+          style = "margin-top:10px;",
+          tags$strong("アンケート回答画面（URL）"),
+          tags$br(),
+          tags$a(href = answer_url, target = "_blank", rel = "noopener", answer_url)
+        )
+      ),
+      tags$a(
+        href = qr_url,
+        target = "_blank",
+        rel = "noopener",
+        class = "btn btn-default",
+        style = "width:100%; margin-top:8px;",
+        "QRコードを生成"
+      ),
+      tags$hr(),
+      tags$div(
+        style = "word-break:break-all;",
+        tags$strong("保存推奨"),
+        tags$div(
+          style = "margin-top:10px;",
+          tags$strong("アンケート作成画面"),
+          tags$br(),
+          tags$a(href = admin_url, target = "_blank", rel = "noopener", admin_url)
+        ),
+        tags$div(
+          style = "margin-top:10px;",
+          tags$strong("アンケート分析画面（現在）"),
+          tags$br(),
+          tags$a(href = analysis_url, target = "_blank", rel = "noopener", analysis_url)
+        )
+      )
+    )
+  })
 
 
   #-------------------------
@@ -81,6 +150,7 @@ shinyServer(function(input, output, session){
       load_answers(input$survey_id)
     )
     survey_response_count(load_response_count(input$survey_id))
+    loaded_survey_id(input$survey_id)
 
     showNotification(
       "読み込みました"

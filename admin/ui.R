@@ -14,6 +14,11 @@ shinyUI(fluidPage(
       textInput("survey_id",  "アンケートID（空なら自動生成）"),
       passwordInput("survey_pw", "アンケートパスワード（必須）"),
       actionButton("load_survey", "既存アンケートを読み込む"),
+      tags$div(
+        style = "margin-top:14px;",
+        textInput("survey_title", "アンケート名", placeholder = "例：新UIの使いやすさアンケート",
+                  width = "100%")
+      ),
       hr(),
 
       h4("標準化プリセット"),

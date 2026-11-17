@@ -7,6 +7,7 @@ shinyServer(function(input, output, session){
   survey_questions <- reactiveVal(NULL)
   survey_groups <- reactiveVal(NULL)
   loaded_survey_id <- reactiveVal(NULL)
+  loaded_survey_title <- reactiveVal(NULL)
   active_group <- reactiveVal(NULL)
   answer_values <- reactiveValues()
   submitted <- reactiveVal(FALSE)
@@ -32,9 +33,11 @@ shinyServer(function(input, output, session){
     }
 
     qs <- randomize_survey_questions(qs, groups)
+    survey_info <- load_survey_info(id)
 
     survey_groups(groups)
     loaded_survey_id(id)
+    loaded_survey_title(if (is.null(survey_info$title) || !nzchar(trimws(survey_info$title))) id else survey_info$title)
     session$sendCustomMessage("page-title", paste0("アンケート回答（", id, "）"))
     survey_questions(qs)
     active_group(names(groups)[1])
@@ -140,7 +143,7 @@ shinyServer(function(input, output, session){
     tagList(
       div(class = "survey-card",
         div(class = "survey-id", "回答するアンケート"),
-        h2(class = "h4 mb-0", loaded_survey_id()),
+        h2(class = "h4 mb-0", loaded_survey_title()),
         p(paste0("ページ ", group_index, " / ", length(page_ids)))
       ),
       lapply(page_group_ids, function(group_id) {

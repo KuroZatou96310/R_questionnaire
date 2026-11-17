@@ -7,8 +7,8 @@ likert_preset_questions <- function(items, max_score = 5, prefix = "") {
     desc = paste0("1〜", max_score, "で回答してください。"),
     type = "single_numeric",
     options = as.character(seq_len(max_score)),
-    min = NULL,
-    max = NULL
+    min = 1,
+    max = max_score
   ))
 }
 
@@ -119,6 +119,13 @@ shinyServer(function(input, output, session) {
   active_group_settings <- reactiveVal(NULL)
   group_settings_draft <- reactiveVal(list())
 
+  observeEvent(getQueryString(), {
+    survey_id <- getQueryString()$id
+    if (!is.null(survey_id) && length(survey_id) && nzchar(trimws(survey_id))) {
+      updateTextInput(session, "survey_id", value = trimws(survey_id))
+    }
+  }, ignoreInit = FALSE)
+
   output$access_link_ui <- renderUI({
     survey_id <- current_id()
     if (is.null(survey_id) || !nzchar(survey_id)) return(NULL)
@@ -133,29 +140,50 @@ shinyServer(function(input, output, session) {
     if (is.null(protocol) || !nzchar(protocol) || is.null(hostname) || !nzchar(hostname)) return(NULL)
 
     origin <- paste0(protocol, "//", hostname, if (!is.null(port) && nzchar(port)) paste0(":", port) else "")
-    analysis_pathname <- sub("/admin/?$", "/analytics/", admin_path)
-    if (identical(analysis_pathname, admin_path)) analysis_pathname <- "/analytics/"
-    answer_url <- paste0("../Access/?id=", utils::URLencode(survey_id, reserved = TRUE))
-    analysis_url <- paste0(origin, analysis_pathname, "?id=", utils::URLencode(survey_id, reserved = TRUE))
+    app_prefix <- sub("/(admin|analytics)/?$", "", admin_path)
+    if (identical(app_prefix, admin_path)) app_prefix <- ""
+    app_url <- function(path, with_id = FALSE) {
+      paste0(origin, app_prefix, "/", path, "/", if (with_id) paste0("?id=", utils::URLencode(survey_id, reserved = TRUE)) else "")
+    }
+    answer_url <- app_url("answer", with_id = TRUE)
+    qr_url <- app_url("Access", with_id = TRUE)
+    admin_url <- app_url("admin", with_id = TRUE)
+    analysis_url <- app_url("analytics", with_id = TRUE)
 
     tagList(
+      tags$div(
+        style = "margin-top:12px;word-break:break-all;",
+        tags$strong("URL集"),
+        tags$div(
+          style = "margin-top:10px;",
+          tags$strong("アンケート回答画面（URL）"),
+          tags$br(),
+          tags$a(href = answer_url, target = "_blank", rel = "noopener", answer_url)
+        )
+      ),
       tags$a(
-        href = answer_url,
+        href = qr_url,
         target = "_blank",
         rel = "noopener",
         class = "btn btn-default",
-        style = "width:100%; margin-top:10px;",
+        style = "width:100%; margin-top:8px;",
         "QRコードを生成"
       ),
+      tags$hr(),
       tags$div(
-        style = "margin-top:12px;word-break:break-all;",
-        tags$strong("分析画面のURL"),
-        tags$br(),
-        tags$a(
-          href = analysis_url,
-          target = "_blank",
-          rel = "noopener",
-          analysis_url
+        style = "word-break:break-all;",
+        tags$strong("保存推奨"),
+        tags$div(
+          style = "margin-top:10px;",
+          tags$strong("アンケート作成画面（現在）"),
+          tags$br(),
+          tags$a(href = admin_url, target = "_blank", rel = "noopener", admin_url)
+        ),
+        tags$div(
+          style = "margin-top:10px;",
+          tags$strong("アンケート分析画面"),
+          tags$br(),
+          tags$a(href = analysis_url, target = "_blank", rel = "noopener", analysis_url)
         )
       )
     )
@@ -257,6 +285,7 @@ shinyServer(function(input, output, session) {
     # SQLiteから質問を読み込む
     groups <- load_groups(sid)
     qlist <- load_questions(sid)
+    survey_info <- load_survey_info(sid)
     
     if (length(qlist) == 0) {
       showNotification("設問が見つかりません", type = "error")
@@ -273,6 +302,7 @@ shinyServer(function(input, output, session) {
     group_settings_draft(list())
     editing_question_options(ids[[1]])
     current_id(sid)
+    updateTextInput(session, "survey_title", value = survey_info$title)
     showNotification("アンケートを読み込みました", type = "message")
   })
 
@@ -624,6 +654,7 @@ shinyServer(function(input, output, session) {
 
     sid <- trimws(input$survey_id)
     if (!nzchar(sid)) sid <- paste0("survey_", UUIDgenerate())
+    survey_title <- trimws(if (is.null(input$survey_title)) "" else input$survey_title)
     previous_sid <- current_id()
     is_copy <- !is.null(previous_sid) && nzchar(previous_sid) && !identical(previous_sid, sid)
 
@@ -646,7 +677,8 @@ shinyServer(function(input, output, session) {
         questions_list = saved_state$questions,
         question_ids = saved_state$order,
         groups_list = saved_state$groups,
-        group_ids = saved_state$group_order
+        group_ids = saved_state$group_order,
+        survey_title = survey_title
       )
 
       store$questions <- saved_state$questions
