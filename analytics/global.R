@@ -59,10 +59,12 @@ question_plot <- function(data, question) {
   }
   values <- question_values(data, question)
   switch(question$type,
+    single = frequency_plot(values, question$title, categories = question$options),
+    single_numeric = frequency_plot(values, question$title, categories = question$options),
     single_text = frequency_plot(values, question$title, categories = question$options),
     date = frequency_plot(values, question$title, "#AF7AA1", question$options),
     multiple = frequency_plot(values, question$title, "#F28E2B", question$options),
-    numeric = , single_numeric = , slider = {
+    numeric = , slider = {
       data <- data.frame(value = suppressWarnings(as.numeric(values)))
       ggplot2::ggplot(data, ggplot2::aes(x = value)) +
         ggplot2::geom_histogram(bins = 12, fill = "#59A14F", color = "white") +

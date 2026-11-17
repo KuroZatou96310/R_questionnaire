@@ -125,7 +125,7 @@ shinyUI(
           ),
 
           tabPanel(
-            "数値同士の分析",
+            "数値分析",
             br(),
             uiOutput("numeric_analysis_ui"),
             hr(),
@@ -142,6 +142,25 @@ shinyUI(
                 tags$li(tags$b("相関の95%信頼区間："), "今回のデータから推定した、本当の相関係数の範囲です。幅が広いほど推定が不確かで、人数が少ないと広くなります。範囲が0をまたぐ場合は、関係があるとは言い切れません。"),
                 tags$li(tags$b("回帰の傾き："), "横軸の値が1大きい人は、縦軸の値が平均してこれだけ大きい（小さい）という傾向を表します。原因と結果を示すものではありません。"),
                 tags$li(tags$b("外れ値："), "全体の傾向から大きく離れた回答の件数です。回帰モデルの標準化残差の絶対値が2を超えた回答を外れ値候補として数えています（概ね平均から2標準偏差以上離れた目安です）。")
+              )
+            )
+          ),
+
+          tabPanel(
+            "2群の分析",
+            br(),
+            uiOutput("twogroup_analysis_ui"),
+            hr(),
+            plotOutput("twogroup_plot", height = "420px"),
+            h4("Mann–Whitney検定の要約"),
+            tableOutput("twogroup_table"),
+            tags$div(
+              style = "margin:12px 0;padding:10px 14px;border:1px solid #cbd5e1;border-radius:6px;color:#334155;",
+              tags$strong("2群の分析の見方（統計初心者向け）"),
+              tags$ul(
+                tags$li(tags$b("中央値："), "各グループの回答を小さい順に並べたときの中央の値です。平均よりも極端な回答の影響を受けにくい指標です。"),
+                tags$li(tags$b("Mann–Whitney検定のp値："), "2つのグループの回答の分布に差がないと仮定したとき、その差が偶然でも起こる確率の目安です。0.05未満が一般的な目安ですが、差の大きさそのものではありません。"),
+                tags$li(tags$b("注意："), "回答数が少ない場合や、2群の回答がほとんど同じ場合は、結果を慎重に解釈してください。")
               )
             )
           )
