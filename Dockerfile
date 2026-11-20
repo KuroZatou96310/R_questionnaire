@@ -1,66 +1,26 @@
-FROM --platform=linux/amd64 ubuntu:26.04
+FROM --platform=linux/amd64 rocker/shiny:4.6.2
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
-# 基本ツール
-RUN apt update && \
-    apt install -y --no-install-recommends \
-    openssh-server \
-    wget \
-    curl \
-    gnupg \
-    ca-certificates \
-    software-properties-common \
-    dirmngr \
-    gdebi-core \
-    git
+# アプリで使うフォント、Git、追加パッケージのシステム依存
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        fonts-noto-cjk \
+        git \
+        libfontconfig1-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libtiff-dev \
+        libuv1-dev \
+        openssh-server \
+    && rm -rf /var/lib/apt/lists/*
 
-# CRAN key 登録
-RUN mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
-    | gpg --dearmor -o /etc/apt/keyrings/cran.gpg
+# rocker/shiny に含まれるパッケージは再インストールせず、不足分だけ追加
+RUN install2.r --error --skipinstalled -n -1 \
+        qrcode uuid DBI RSQLite showtext ggplot2 wordcloud
 
-RUN echo "deb [signed-by=/etc/apt/keyrings/cran.gpg] https://cloud.r-project.org/bin/linux/ubuntu resolute-cran40/" \
-    > /etc/apt/sources.list.d/cran-r.list
-# R install
-RUN apt update && \
-    apt install -y --no-install-recommends \
-    r-base \
-    r-base-dev
-
-# Shiny 用ライブラリ
-RUN apt install -y --no-install-recommends \
-    libfreetype-dev \
-    libfontconfig1-dev \
-    libcairo2-dev \
-    libharfbuzz-dev \
-    libfribidi-dev\
-    libtiff5-dev \
-    libuv1-dev
-
-# 日本語用フォント
-RUN apt-get install -y fonts-noto-cjk
-
-#Rの使うライブラリあったらここ入れといて
-RUN Rscript -e "install.packages(c('qrcode','shiny','rmarkdown','jsonlite','uuid','digest', 'DBI', 'RSQLite','bslib','showtext','ggplot2','wordcloud'), repos='https://cloud.r-project.org')"
-
-# Shiny Server install
-RUN curl -fL --retry 5 --retry-all-errors -o shiny-server-1.5.23.1030-amd64.deb \
-    https://download3.rstudio.org/ubuntu-20.04/x86_64/shiny-server-1.5.23.1030-amd64.deb && \
-    gdebi -n shiny-server-1.5.23.1030-amd64.deb
-
-# Shiny Server starts app processes in a login shell, which resets Docker ENV.
-RUN printf '\nexport LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' >> /home/shiny/.profile
-
-# app 配置
-#COPY shinyApp/ /srv/shiny-server/
-# 所有権をshinyに統一
-
-
-
-## データ保存用ディレクトリ作成
+# アプリ配置
 RUN rm -rf /srv/shiny-server/*
 
 RUN git clone --depth 1 \
@@ -68,22 +28,11 @@ RUN git clone --depth 1 \
     /srv/shiny-server
 
 # データベース用ディレクトリ作成と権限付与
-RUN mkdir /srv/shiny-server/data
-RUN chown shiny:shiny /srv/shiny-server/data
+RUN mkdir -p /srv/shiny-server/data \
+    && chown shiny:shiny /srv/shiny-server/data
 
-RUN cp \
-    /srv/shiny-server/shiny-server.conf \
-    /etc/shiny-server/shiny-server.conf
+RUN cp /srv/shiny-server/shiny-server.conf /etc/shiny-server/shiny-server.conf
 
-# port
 EXPOSE 3838
 
-# 起動
-CMD ["/usr/bin/shiny-server"]
-
-
-
-
-#docker build -t shiny-server .\
-#docker run -d -p 3838:3838 --name questionnaire shiny-server
-#Ctrl + Shift + P -> Dev Containers: Attach to Running Container... -> aaaaaaaみたいな感じ
+# rocker/shiny の /init を使い、Shiny Server とログ管理を起動
