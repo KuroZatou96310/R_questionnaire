@@ -35,4 +35,6 @@ RUN cp /srv/shiny-server/shiny-server.conf /etc/shiny-server/shiny-server.conf
 
 EXPOSE 3838
 
-# rocker/shiny の /init を使い、Shiny Server とログ管理を起動
+#docker build -t shiny-server .\
+#docker run -d -p 3838:3838 --name questionnaire shiny-server
+#Ctrl + Shift + P -> Dev Containers: Attach to Running Container... -> aaaaaaaみたいな感じ
