@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # rocker/shiny に含まれるパッケージは再インストールせず、不足分だけ追加
 RUN install2.r --error --skipinstalled -n -1 \
-        qrcode DBI RSQLite showtext ggplot2 wordcloud uuid
+        qrcode DBI RSQLite showtext ggplot2 wordcloud
 
 # アプリ配置
 RUN rm -rf /srv/shiny-server/*
