@@ -12,7 +12,7 @@ shinyUI(
     ),
     tags$head(
       tags$title("アンケート回答"),
-      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20261123-13"),
+      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20261123-14"),
       tags$script(HTML("Shiny.addCustomMessageHandler('page-title', function(title) { document.title = title; });"))
     ),
     div(

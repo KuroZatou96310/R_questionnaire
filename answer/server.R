@@ -160,7 +160,7 @@ shinyServer(function(input, output, session){
         )
       }),
       div(class = "group-navigation",
-        if (group_index > 1) actionButton("group_previous", "前へ") else NULL,
+        if (group_index > 1) actionButton("group_previous", "前へ") else span(),
         if (group_index < length(page_ids)) {
           actionButton("group_next", "次へ", class = "btn-primary")
         } else {
