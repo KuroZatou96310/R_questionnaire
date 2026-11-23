@@ -114,7 +114,7 @@ shinyServer(function(input, output, session) {
   editing_question_options <- reactiveVal(NULL)
   active_group_settings <- reactiveVal(NULL)
   generate_survey_id <- function() {
-    paste0(sample(c(letters, LETTERS, 0:9), 8, replace = TRUE), collapse = "")
+    paste0(sample(c(letters, LETTERS, 0:9), 16, replace = TRUE), collapse = "")
   }
   next_editor_key <- local({
     key <- 0L

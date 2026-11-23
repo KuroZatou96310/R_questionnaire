@@ -11,7 +11,7 @@ shinyUI(fluidPage(
   sidebarLayout(
     sidebarPanel(
       h4("アンケート情報"),
-      textInput("survey_id",  "読み込むアンケートID"),
+      textInput("survey_id",  "アンケートID（保存・読み込みに使用）"),
       passwordInput("survey_pw", "アンケートパスワード（必須）"),
       actionButton("load_survey", "既存アンケートを読み込む"),
       tags$div(
