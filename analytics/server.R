@@ -42,6 +42,7 @@ shinyServer(function(input, output, session){
   survey_answers   <- reactiveVal(NULL)
   survey_response_count <- reactiveVal(0L)
   loaded_survey_id <- reactiveVal(NULL)
+  loaded_survey_title <- reactiveVal("")
 
   observeEvent(getQueryString(), {
     survey_id <- getQueryString()$id
@@ -151,6 +152,7 @@ shinyServer(function(input, output, session){
     survey_info <- load_survey_info(input$survey_id)
     updateTextInput(session, "survey_id", value = survey_info$id)
     loaded_survey_id(survey_info$id)
+    loaded_survey_title(if (is.null(survey_info$title) || is.na(survey_info$title)) "" else survey_info$title)
 
     showNotification(
       "読み込みました"
@@ -161,6 +163,11 @@ shinyServer(function(input, output, session){
   #-------------------------
   # 回答数
   #-------------------------
+  output$loaded_survey_title <- renderText({
+    title <- loaded_survey_title()
+    if (!nzchar(title)) "" else paste0("アンケート名：", title)
+  })
+
   output$response_count <- renderText({
 
     req(survey_answers(), filtered_answers())
@@ -198,7 +205,7 @@ shinyServer(function(input, output, session){
 
           p(q$desc),
 
-          plotOutput(
+          if (q$type != "text") plotOutput(
             paste0("plot_",id),
             height = "350px"
           ),
@@ -234,7 +241,11 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single_numeric", "single_text", "multiple", "date", "numeric"),
+      function(q) {
+        if (!q$type %in% c("single_numeric", "single_text", "multiple")) return(FALSE)
+        options <- unlist(q$options, use.names = FALSE)
+        length(options) > 0 && length(options) < 15
+      },
       logical(1)
     )]
 
