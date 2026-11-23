@@ -12,12 +12,11 @@ shinyUI(
     ),
     tags$head(
       tags$title("アンケート回答"),
-      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20261116-2"),
+      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20261123-10"),
       tags$script(HTML("Shiny.addCustomMessageHandler('page-title', function(title) { document.title = title; });"))
     ),
     div(
       class = "answer-wrap",
-      h1(class = "answer-heading", "アンケートに回答"),
       uiOutput("load_panel_ui"),
       uiOutput("question_ui")
     )

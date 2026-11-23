@@ -17,6 +17,17 @@
 .question-card-heading { display:flex; align-items:center; gap:8px; }
 .drag-grip { color:#64748b; font-size:16px; user-select:none; }
 .question-type { margin-left:auto; color:#64748b; font-size:12px; }
+.numeric-scale .shiny-input-container { width:100%; margin:0; }
+.numeric-scale .shiny-options-group { display:grid; grid-template-columns:repeat(auto-fit,minmax(36px,1fr)); }
+.numeric-scale .radio-inline { position:relative; display:block; margin:0; padding:0; }
+.numeric-scale .radio-inline input { position:absolute; opacity:0; }
+.numeric-scale .radio-inline span { display:flex; min-height:42px; align-items:center; justify-content:center; border:1px solid #aeb7bd; background:#fff; color:#53616a; }
+.numeric-scale .radio-inline + .radio-inline span { border-left:0; }
+.numeric-scale .radio-inline:first-child span { border-radius:4px 0 0 4px; }
+.numeric-scale .radio-inline:last-child span { border-radius:0 4px 4px 0; }
+.numeric-scale .radio-inline input:checked + span { background:#e8f1f2; color:#253746; font-weight:700; }
+.numeric-scale .radio-inline input:focus + span { outline:2px solid #647f8a; outline-offset:-2px; }
+.numeric-scale-ends { display:flex; justify-content:space-between; gap:16px; margin-top:8px; color:#475569; font-size:14px; }
 .question-number { color:#334155; font-weight:700; }
 .question-description, .question-options { margin:6px 0 0 28px; color:#64748b; font-size:13px; }
 .question-actions { display:flex; gap:6px; margin:10px 0 0 28px; }

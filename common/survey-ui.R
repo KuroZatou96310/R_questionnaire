@@ -9,7 +9,13 @@ question_response_input <- function(id, question, value = NULL, label = NULL) {
       slider = sliderInput(id, label, min = question$min, max = question$max,
                            value = if (length(selected)) as.numeric(selected[1]) else question$min, step = 1),
       dropdown = selectInput(id, label, c("選択してください" = "", options), selected = selected),
-      horizontal = radioButtons(id, label, options, selected = selected, inline = TRUE),
+      horizontal = div(class = "numeric-scale",
+        radioButtons(id, label, options, selected = selected, inline = TRUE),
+        div(class = "numeric-scale-ends",
+          span(if (is.null(settings$min_label)) "" else settings$min_label),
+          span(if (is.null(settings$max_label)) "" else settings$max_label)
+        )
+      ),
       radioButtons(id, label, options, selected = selected)
     ),
     single_text = switch(display,

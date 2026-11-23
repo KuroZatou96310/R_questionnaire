@@ -260,6 +260,13 @@ shinyServer(function(input, output, session) {
           if (is.null(question$settings)) question$settings <- list()
           question$settings$display <- display
         }
+        if (question$type == "single_numeric") for (field in c("min_label", "max_label")) {
+          value <- input[[paste0("question_", field, "_", question_id)]]
+          if (!is.null(value)) {
+            if (is.null(question$settings)) question$settings <- list()
+            question$settings[[field]] <- value
+          }
+        }
         questions[[question_id]] <- question
       }
       groups[[group_id]]$questions <- questions
@@ -362,10 +369,11 @@ shinyServer(function(input, output, session) {
   observe({
     group_id <- active_group_settings()
     req(!is.null(group_id), group_id %in% names(store$groups))
+    title <- input[[paste0("group_title_", group_id)]]
     page <- input[[paste0("group_page_", group_id)]]
     randomize <- input[[paste0("group_randomize_questions_", group_id)]]
     has_visibility <- input[[paste0("group_has_visibility_", group_id)]]
-    req(!is.null(page), !is.null(randomize), !is.null(has_visibility))
+    req(!is.null(title), !is.null(page), !is.null(randomize), !is.null(has_visibility))
 
     settings <- list(page = isTRUE(page), randomize_questions = isTRUE(randomize))
     condition_question <- input[[paste0("group_condition_question_", group_id)]]
@@ -380,7 +388,8 @@ shinyServer(function(input, output, session) {
     }
 
     groups <- store$groups
-    if (!identical(groups[[group_id]]$settings, settings)) {
+    if (!identical(groups[[group_id]]$title, title) || !identical(groups[[group_id]]$settings, settings)) {
+      groups[[group_id]]$title <- title
       groups[[group_id]]$settings <- settings
       store$groups <- groups
     }

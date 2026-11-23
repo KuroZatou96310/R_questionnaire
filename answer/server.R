@@ -147,13 +147,13 @@ shinyServer(function(input, output, session){
       div(class = "survey-card",
         div(class = "survey-id", "回答するアンケート"),
         h2(class = "h4 mb-0", loaded_survey_title()),
-        p(paste0("ページ ", group_index, " / ", length(page_ids)))
+        div(class = "survey-page", paste0("ページ ", group_index, " / ", length(page_ids)))
       ),
       lapply(page_group_ids, function(group_id) {
         group_question_ids <- names(qs)[vapply(qs, function(q) identical(q$group_id, group_id), logical(1))]
         group <- groups[[group_id]]
-        tagList(
-          if (length(page_group_ids) > 1) h3(class = "group-heading", group$title),
+        div(class = "question-group",
+          h3(class = "group-heading", group$title),
           lapply(group_question_ids, function(id) answer_question_ui(qs[[id]], isolate(current_answer(id))))
         )
       }),
