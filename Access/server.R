@@ -1,11 +1,14 @@
 library(shiny)
 library(qrcode)
+source("../common/db.R")
 
 shinyServer(function(input, output, session) {
   access_data <- reactive({
     query <- parseQueryString(session$clientData$url_search)
     survey_id <- query[["id"]]
     req(!is.null(survey_id), nzchar(survey_id))
+    survey_id <- load_survey_info(survey_id)$id
+    req(nzchar(survey_id))
 
     protocol <- sub(":$", "", session$clientData$url_protocol)
     if (!nzchar(protocol)) protocol <- "http"

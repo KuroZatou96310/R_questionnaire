@@ -142,15 +142,15 @@ shinyServer(function(input, output, session){
       return()
     }
 
-    survey_questions(
-      load_questions(input$survey_id)
-    )
+    survey_questions(flatten_survey_groups(load_survey_items(input$survey_id)$groups))
 
     survey_answers(
       load_answers(input$survey_id)
     )
     survey_response_count(load_response_count(input$survey_id))
-    loaded_survey_id(input$survey_id)
+    survey_info <- load_survey_info(input$survey_id)
+    updateTextInput(session, "survey_id", value = survey_info$id)
+    loaded_survey_id(survey_info$id)
 
     showNotification(
       "読み込みました"
@@ -234,7 +234,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single_numeric", "single_text", "multiple", "date", "numeric", "slider"),
+      function(q) q$type %in% c("single_numeric", "single_text", "multiple", "date", "numeric"),
       logical(1)
     )]
 
@@ -333,7 +333,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("single_numeric", "single_text", "multiple", "date", "numeric", "slider"),
+      function(q) q$type %in% c("single_numeric", "single_text", "multiple", "date", "numeric"),
       logical(1)
     )]
 
@@ -374,7 +374,7 @@ shinyServer(function(input, output, session){
 
     question <- qs[[input$filter_question]]
 
-    if (question$type %in% c("numeric", "single_numeric", "slider")) {
+    if (question$type %in% c("numeric", "single_numeric")) {
       return(tagList(
         numericInput("filter_min", "以上", value = NA, step = "any"),
         numericInput("filter_max", "以下", value = NA, step = "any"),
@@ -412,7 +412,7 @@ shinyServer(function(input, output, session){
 
     question <- qs[[input$filter_question]]
 
-    if (question$type %in% c("numeric", "single_numeric", "slider")) {
+    if (question$type %in% c("numeric", "single_numeric")) {
       values <- answered_question_data(survey_answers(), input$filter_question)
       values$numeric_value <- suppressWarnings(as.numeric(values$answer_text))
       keep <- !is.na(values$numeric_value)
@@ -772,7 +772,7 @@ shinyServer(function(input, output, session){
     ids <- names(survey_questions())
     ids[vapply(
       survey_questions()[ids],
-      function(q) q$type %in% c("numeric", "single_numeric", "slider"),
+      function(q) q$type %in% c("numeric", "single_numeric"),
       logical(1)
     )]
 
@@ -783,7 +783,7 @@ shinyServer(function(input, output, session){
     ids <- numeric_question_ids()
 
     if (length(ids) < 2) {
-      return(helpText("数値分析には、自由記載（数字）・択一選択（数字）・スライダーの設問が2つ以上必要です。"))
+      return(helpText("数値分析には、自由記載（数字）と択一選択（数字）の設問が2つ以上必要です。"))
     }
 
     qs <- survey_questions()

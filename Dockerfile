@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 rocker/shiny:4.6.2
+FROM rocker/shiny:latest
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -18,14 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # rocker/shiny に含まれるパッケージは再インストールせず、不足分だけ追加
 RUN install2.r --error --skipinstalled -n -1 \
-        qrcode uuid DBI RSQLite showtext ggplot2 wordcloud
+        qrcode DBI RSQLite showtext ggplot2 wordcloud
 
 # アプリ配置
-RUN rm -rf /srv/shiny-server/*
-
-RUN git clone --depth 1 \
-    https://github.com/KuroZatou96310/R_questionnaire.git \
-    /srv/shiny-server
+COPY . /srv/shiny-server/
 
 # データベース用ディレクトリ作成と権限付与
 RUN mkdir -p /srv/shiny-server/data \

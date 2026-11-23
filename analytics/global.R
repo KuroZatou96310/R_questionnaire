@@ -53,26 +53,31 @@ question_values <- function(data, question) {
   values[!is.na(values) & nzchar(trimws(values))]
 }
 
+numeric_response_plot <- function(values, title) {
+  data <- data.frame(value = suppressWarnings(as.numeric(values)))
+  ggplot2::ggplot(data, ggplot2::aes(x = value)) +
+    ggplot2::geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
+    ggplot2::stat_bin(bins = 12, geom = "text", ggplot2::aes(label = ggplot2::after_stat(count)),
+                      vjust = -0.4, family = "jp") +
+    ggplot2::labs(title = title, x = "値", y = "回答数") +
+    ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.16))) + analysis_theme()
+}
+
 question_plot <- function(data, question) {
   if (!nrow(data)) {
     plot.new(); text(0.5, 0.5, "回答なし"); return(invisible(NULL))
   }
   values <- question_values(data, question)
+  if (question$type == "single_numeric" && identical(question$settings$display, "slider")) {
+    return(numeric_response_plot(values, question$title))
+  }
   switch(question$type,
     single = frequency_plot(values, question$title, categories = question$options),
     single_numeric = frequency_plot(values, question$title, categories = question$options),
     single_text = frequency_plot(values, question$title, categories = question$options),
     date = frequency_plot(values, question$title, "#AF7AA1", question$options),
     multiple = frequency_plot(values, question$title, "#F28E2B", question$options),
-    numeric = , slider = {
-      data <- data.frame(value = suppressWarnings(as.numeric(values)))
-      ggplot2::ggplot(data, ggplot2::aes(x = value)) +
-        ggplot2::geom_histogram(bins = 12, fill = "#59A14F", color = "white") +
-        ggplot2::stat_bin(bins = 12, geom = "text", ggplot2::aes(label = ggplot2::after_stat(count)),
-                          vjust = -0.4, family = "jp") +
-        ggplot2::labs(title = question$title, x = "値", y = "回答数") +
-        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.16))) + analysis_theme()
-    },
+    numeric = numeric_response_plot(values, question$title),
     text = { plot.new(); text(0.5, 0.5, "自由記述は下表を参照"); invisible(NULL) }
   )
 }
@@ -83,7 +88,7 @@ question_summary <- function(data, question) {
     names(result) <- if (question$type == "date") c("日付", "件数") else c("回答", "件数")
     return(result)
   }
-  if (question$type %in% c("numeric", "single_numeric", "slider")) {
+  if (question$type %in% c("numeric", "single_numeric")) {
     values <- suppressWarnings(as.numeric(as.character(data$answer_text)))
     return(data.frame(
       key = c("平均", "中央値", "最小", "最大", "標準偏差"),

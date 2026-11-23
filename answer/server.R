@@ -1,6 +1,7 @@
 library(shiny)
 
 source("../common/db.R")
+source("../common/survey-ui.R")
 
 shinyServer(function(input, output, session){
 
@@ -22,8 +23,9 @@ shinyServer(function(input, output, session){
   })
 
   load_survey <- function(id) {
-    groups <- load_groups(id)
-    qs <- load_questions(id)
+    structure <- load_survey_items(id)
+    groups <- structure$groups
+    qs <- flatten_survey_groups(groups)
     if (length(qs) == 0) {
       showNotification(
         "アンケートが見つかりません",
@@ -34,6 +36,7 @@ shinyServer(function(input, output, session){
 
     qs <- randomize_survey_questions(qs, groups)
     survey_info <- load_survey_info(id)
+    id <- survey_info$id
 
     survey_groups(groups)
     loaded_survey_id(id)
@@ -125,9 +128,9 @@ shinyServer(function(input, output, session){
   output$question_ui <- renderUI({
     if (isTRUE(submitted())) {
       return(div(
-        class = "completion-card",
-        h2("アンケートの回答を終了しました"),
-        p("ご回答ありがとうございました。")
+        class = "question-card",
+        div(class = "question-title", "アンケートの回答を終了しました"),
+        div(class = "question-description", "ご回答ありがとうございました。")
       ))
     }
 

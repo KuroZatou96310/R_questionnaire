@@ -20,6 +20,9 @@
     dragged = sourceGroup = target = pending = lastPointer = null;
     clearTarget();
   }
+  function closeQuestionEditor() {
+    if (window.Shiny) Shiny.setInputValue('close_question', Date.now(), { priority: 'event' });
+  }
   function setInsertTarget(button) {
     if (!button?.matches('.insert-question-button')) return false;
     target = button;
@@ -68,14 +71,16 @@
     const checked = (id) => read(id)?.checked ?? null;
     const question_drafts = Array.from(board.querySelectorAll('.question-row')).map((row) => {
       const id = row.dataset.questionId;
+      const type = value(`question_edit_type_${id}`);
       return {
         id,
         title: value(`question_edit_title_${id}`),
         desc: value(`question_edit_desc_${id}`),
-        type: value(`question_edit_type_${id}`),
-        options: value(`question_edit_options_${id}`),
-        min: value(`question_edit_min_${id}`),
-        max: value(`question_edit_max_${id}`),
+        type,
+        options: Array.from(read(`question_edit_options_${id}`)?.selectedOptions || []).map((option) => option.value),
+        display: value(`question_edit_display_${id}_${type === 'single_numeric' ? 'numeric' : type === 'single_text' ? 'text' : 'multiple'}`),
+        min: value(type === 'numeric' ? `question_edit_numeric_min_${id}` : `question_edit_min_${id}`),
+        max: value(type === 'numeric' ? `question_edit_numeric_max_${id}` : `question_edit_max_${id}`),
         randomize_choices: checked(`question_randomize_choices_${id}`),
         required: checked(`question_required_${id}`)
       };
@@ -110,7 +115,7 @@
   }
   function finishDrag(x, y) {
     updateTarget(x, y);
-    if (!dragged || !target) { reset(); return; }
+    if (!dragged || !target) { closeQuestionEditor(); reset(); return; }
     const list = target.closest('.question-list');
     const reference = target.classList.contains('insert-question-button-final') ? target : target.nextElementSibling;
     if (list && reference !== dragged) list.insertBefore(dragged, reference);
@@ -118,6 +123,7 @@
     setTimeout(() => { suppressClick = false; }, 0);
     reset();
     sendLayout();
+    closeQuestionEditor();
   }
   document.addEventListener('click', (event) => {
     if (!suppressClick) return;
@@ -125,6 +131,16 @@
     event.stopImmediatePropagation();
     suppressClick = false;
   }, true);
+  document.addEventListener('click', (event) => {
+    if (suppressClick) return;
+    const board = root();
+    const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const openCard = board?.querySelector('.question-card-open');
+    if (openCard && !openCard.contains(eventTarget)) { closeQuestionEditor(); return; }
+    if (eventTarget?.closest('button,input,textarea,select,label,.question-detail-panel')) return;
+    const card = eventTarget?.closest('.question-card');
+    if (card && board?.contains(card)) Shiny.setInputValue('toggle_question', card.dataset.questionId, { priority: 'event' });
+  });
   document.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || event.pointerType !== 'mouse') return;
     const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
@@ -158,6 +174,6 @@
     else pending = null;
   });
   document.addEventListener('pointercancel', (event) => {
-    if (pending && event.pointerId === pending.pointerId) reset();
+    if (pending && event.pointerId === pending.pointerId) { if (dragged) closeQuestionEditor(); reset(); }
   });
 })();

@@ -3,15 +3,15 @@ library(shiny)
 shinyUI(fluidPage(
   tags$head(
     tags$title("アンケート作成画面"),
-    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261116-12"),
-    tags$script(src = "questionnaire-dnd.js?v=20261116-11")
+    tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261122-1"),
+    tags$script(src = "questionnaire-dnd.js?v=20261122-2")
   ),
   titlePanel("アンケート生成アプリ（admin）"),
   
   sidebarLayout(
     sidebarPanel(
-      h4("アンケート情報 (ID/PW)"),
-      textInput("survey_id",  "アンケートID（空なら自動生成）"),
+      h4("アンケート情報"),
+      textInput("survey_id",  "読み込むアンケートID"),
       passwordInput("survey_pw", "アンケートパスワード（必須）"),
       actionButton("load_survey", "既存アンケートを読み込む"),
       tags$div(

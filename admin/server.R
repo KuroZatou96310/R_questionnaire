@@ -1,25 +1,15 @@
 library(shiny)
 source("../common/db.R")
+source("../common/survey-ui.R")
 
-likert_preset_questions <- function(items, max_score = 5, prefix = "") {
-  lapply(seq_along(items), function(i) list(
-    # プリセット名は設問タイトルに重ねて表示せず、設問本文だけを表示する。
-    title = items[[i]],
-    desc = {
-      endpoints <- trimws(strsplit(items[[i]], "—", fixed = TRUE)[[1]])
-      middle <- ceiling(max_score / 2)
-      scale_description <- if (length(endpoints) >= 2) {
-        paste0("1：", endpoints[[1]], "　", middle, "：どちらともいえない　", max_score, "：", endpoints[[length(endpoints)]])
-      } else {
-        paste0("1：そう思わない　", middle, "：どちらともいえない　", max_score, "：そう思う")
-      }
-      paste0("1〜", max_score, "で回答してください。 ", scale_description)
-    },
-    type = "single_numeric",
-    options = as.character(seq_len(max_score)),
-    min = 1,
-    max = max_score
-  ))
+likert_preset_questions <- function(items, max_score = 5) {
+  middle <- ceiling(max_score / 2)
+  lapply(items, function(item) {
+    ends <- trimws(strsplit(item, "—", fixed = TRUE)[[1]])
+    scale <- if (length(ends) > 1) paste0("1：", ends[1], "　", middle, "：どちらともいえない　", max_score, "：", tail(ends, 1)) else paste0("1：そう思わない　", middle, "：どちらともいえない　", max_score, "：そう思う")
+    list(title = item, desc = paste0("1〜", max_score, "で回答してください。 ", scale), type = "single_numeric",
+         options = as.character(seq_len(max_score)), min = 1, max = max_score)
+  })
 }
 
 standard_presets <- list(
@@ -36,14 +26,14 @@ standard_presets <- list(
       "このシステムを使うのは非常に面倒だと感じた。",
       "このシステムを自信を持って使えると感じた。",
       "使い始める前に多くのことを学ぶ必要があると感じた。"
-    ), 5, "SUS ")
+    ), 5)
   ),
   `UMUX-Lite` = list(
     title = "UMUX-Lite",
     questions = likert_preset_questions(c(
       "このシステムの機能は、私の要求を満たしている。",
       "このシステムは使いやすい。"
-    ), 7, "UMUX-Lite ")
+    ), 7)
   ),
   UEQ = list(
     title = "UEQ（全26項目）",
@@ -57,7 +47,7 @@ standard_presets <- list(
       "期待に合わない — 期待に合う", "非効率的な — 効率的な", "わかりにくい — わかりやすい",
       "実用的でない — 実用的な", "整理されていない — 整理された",
       "魅力的でない — 魅力的な", "親しみにくい — 親しみやすい", "保守的な — 革新的な"
-    ), 7, "UEQ ")
+    ), 7)
   ),
   `UEQ-S` = list(
     title = "UEQ-S（短縮版）",
@@ -70,14 +60,15 @@ standard_presets <- list(
       "保守的な — 革新的な",
       "遅い — 速い",
       "わかりにくい — わかりやすい"
-    ), 7, "UEQ-S ")
+    ), 7)
   ),
   `NASA-TLX` = list(
     title = "NASA-TLX",
     questions = lapply(c("知的・知覚的要求", "身体的要求", "時間的切迫感", "作業達成度", "努力", "不満・ストレス"), function(item) list(
       title = paste0("NASA-TLX：", item),
       desc = "0（低い）〜100（高い）で回答してください。",
-      type = "slider", options = NULL, min = 0, max = 100
+      type = "single_numeric", options = as.character(0:100), min = 0, max = 100,
+      settings = list(display = "slider")
     ))
   ),
   TAM = list(
@@ -89,7 +80,7 @@ standard_presets <- list(
       "このシステムの操作方法を身につけるのは簡単だ。",
       "このシステムは柔軟に操作できる。",
       "このシステム全体として使いやすい。"
-    ), 7, "TAM ")
+    ), 7)
   ),
   GEQ = list(
     title = "GEQ（ゲーム体験質問紙の一般的評価項目）",
@@ -99,7 +90,7 @@ standard_presets <- list(
       "この体験に満足した。",
       "もう一度この体験をしたい。",
       "この体験は緊張を感じさせた。"
-    ), 5, "GEQ ")
+    ))
   ),
   IMI = list(
     title = "IMI（Intrinsic Motivation Inventory）",
@@ -111,23 +102,21 @@ standard_presets <- list(
       "この活動を自分で選んでいると感じた。",
       "この活動に自信を持って取り組めた。",
       "この活動に集中できた。"
-    ), 7, "IMI ")
+    ), 7)
   )
 )
 
 shinyServer(function(input, output, session) {
   
   # 作業中アンケート（順序付き）
-  store <- reactiveValues(
-    order = character(0),
-    questions = list(),
-    group_order = character(0),
-    groups = list()
-  )
+  store <- reactiveValues(groups = list())
   current_id <- reactiveVal(NULL)
   editing_question_options <- reactiveVal(NULL)
   active_group_settings <- reactiveVal(NULL)
-  group_settings_draft <- reactiveVal(list())
+  next_editor_key <- local({
+    key <- 0L
+    function(kind) { key <<- key + 1L; paste0("new_", kind, "_", key) }
+  })
 
   observeEvent(getQueryString(), {
     survey_id <- getQueryString()$id
@@ -201,75 +190,81 @@ shinyServer(function(input, output, session) {
 
   observeEvent(input$toggle_question, {
     question_id <- input$toggle_question
-    req(question_id %in% names(store$questions))
-    store$questions <- capture_question_editor_inputs(store$questions)
-    editing_question_options(if (identical(editing_question_options(), question_id)) NULL else question_id)
+    req(question_id %in% names(flatten_survey_groups(store$groups)))
+    capture_questions()
+    current <- editing_question_options()
+    editing_question_options(if (is.null(current)) question_id else NULL)
   })
 
-  capture_question_editor_inputs <- function(questions) {
-    for (question_id in names(questions)) {
-      question <- questions[[question_id]]
-      title <- input[[paste0("question_edit_title_", question_id)]]
-      description <- input[[paste0("question_edit_desc_", question_id)]]
-      type <- input[[paste0("question_edit_type_", question_id)]]
-      if (!is.null(title)) question$title <- title
-      if (!is.null(description)) question$desc <- description
-      if (!is.null(type)) question$type <- type
+  observeEvent(input$close_question, {
+    if (is.null(editing_question_options())) return()
+    capture_questions()
+    editing_question_options(NULL)
+  })
 
-      if (question$type %in% c("single_text", "multiple")) {
-        option_text <- input[[paste0("question_edit_options_", question_id)]]
-        if (!is.null(option_text)) {
-          options <- trimws(strsplit(option_text, "\n", fixed = TRUE)[[1]])
-          options <- options[nzchar(options)]
-          question$options <- if (length(options)) options else NULL
-        }
-      } else if (question$type != "single_numeric") {
-        question$options <- NULL
-      }
-
-      if (question$type %in% c("slider", "single_numeric", "numeric")) {
-        for (field in c("min", "max")) {
+  capture_question_editor_inputs <- function(groups) {
+    for (group_id in names(groups)) {
+      questions <- groups[[group_id]]$questions
+      for (question_id in names(questions)) {
+        question <- questions[[question_id]]
+        for (field in c("title", "desc", "type")) {
           value <- input[[paste0("question_edit_", field, "_", question_id)]]
+          if (!is.null(value)) question[[field]] <- value
+        }
+
+        if (question$type %in% c("single_text", "multiple")) {
+          options <- input[[paste0("question_edit_options_", question_id)]]
+          if (!is.null(options)) {
+            options <- unique(trimws(as.character(options)))
+            options <- options[nzchar(options)]
+            question$options <- if (length(options)) options else NULL
+          }
+        } else if (question$type != "single_numeric") question$options <- NULL
+
+        if (question$type %in% c("single_numeric", "numeric")) {
+          for (field in c("min", "max")) {
+            input_id <- if (question$type == "numeric") paste0("question_edit_numeric_", field, "_", question_id) else paste0("question_edit_", field, "_", question_id)
+            value <- input[[input_id]]
+            if (!is.null(value)) question[[field]] <- if (!length(value) || is.na(value)) NULL else suppressWarnings(as.numeric(value))
+          }
+        } else question$min <- question$max <- NULL
+
+        if (question$type == "single_numeric") {
+          old_options <- suppressWarnings(as.numeric(question$options))
+          if (is.null(input[[paste0("question_edit_min_", question_id)]]) && is.null(question$min) && length(old_options) && all(is.finite(old_options))) question$min <- min(old_options)
+          if (is.null(input[[paste0("question_edit_max_", question_id)]]) && is.null(question$max) && length(old_options) && all(is.finite(old_options))) question$max <- max(old_options)
+          if (!is.null(question$min) && !is.null(question$max) && question$min <= question$max &&
+              question$min == floor(question$min) && question$max == floor(question$max)) question$options <- as.character(seq.int(question$min, question$max))
+        }
+
+        setting_ids <- c(randomize_choices = "question_randomize_choices_", required = "question_required_",
+                         long_text = "question_long_text_")
+        for (field in names(setting_ids)) {
+          value <- input[[paste0(setting_ids[[field]], question_id)]]
           if (!is.null(value)) {
-            if (!length(value) || is.na(value)) question[[field]] <- NULL
-            else question[[field]] <- suppressWarnings(as.numeric(value))
+            if (is.null(question$settings)) question$settings <- list()
+            question$settings[[field]] <- if (field == "display") value else isTRUE(value)
           }
         }
-      } else {
-        question$min <- question$max <- NULL
-      }
-      if (question$type == "single_numeric") {
-        old_options <- suppressWarnings(as.numeric(question$options))
-        if (is.null(input[[paste0("question_edit_min_", question_id)]]) && is.null(question$min) && length(old_options) && all(is.finite(old_options))) question$min <- min(old_options)
-        if (is.null(input[[paste0("question_edit_max_", question_id)]]) && is.null(question$max) && length(old_options) && all(is.finite(old_options))) question$max <- max(old_options)
-        if (!is.null(question$min) && !is.null(question$max) && question$min <= question$max &&
-            question$min == floor(question$min) && question$max == floor(question$max)) {
-          question$options <- as.character(seq.int(question$min, question$max))
+        display_id <- switch(question$type,
+          single_numeric = paste0("question_edit_display_", question_id, "_numeric"),
+          single_text = paste0("question_edit_display_", question_id, "_text"),
+          multiple = paste0("question_edit_display_", question_id, "_multiple"), NULL)
+        display <- if (is.null(display_id)) NULL else input[[display_id]]
+        if (!is.null(display)) {
+          if (is.null(question$settings)) question$settings <- list()
+          question$settings$display <- display
         }
+        questions[[question_id]] <- question
       }
-
-      randomize <- input[[paste0("question_randomize_choices_", question_id)]]
-      required <- input[[paste0("question_required_", question_id)]]
-      if (!is.null(randomize) || !is.null(required)) {
-        settings <- question$settings
-        if (is.null(settings)) settings <- list()
-        if (!is.null(randomize)) settings$randomize_choices <- isTRUE(randomize)
-        if (!is.null(required)) settings$required <- isTRUE(required)
-        question$settings <- settings
-      }
-      display <- input[[paste0("question_edit_display_", question_id)]]
-      if (!is.null(display)) {
-        if (is.null(question$settings)) question$settings <- list()
-        question$settings$display <- display
-      }
-      long_text <- input[[paste0("question_long_text_", question_id)]]
-      if (!is.null(long_text)) {
-        if (is.null(question$settings)) question$settings <- list()
-        question$settings$long_text <- isTRUE(long_text)
-      }
-      questions[[question_id]] <- question
+      groups[[group_id]]$questions <- questions
     }
-    questions
+    groups
+  }
+
+  capture_questions <- function() {
+    store$groups <- capture_question_editor_inputs(store$groups)
+    store$groups
   }
 
 
@@ -293,8 +288,9 @@ shinyServer(function(input, output, session) {
     }
     
     # SQLiteから質問を読み込む
-    groups <- load_groups(sid)
-    qlist <- load_questions(sid)
+    structure <- load_survey_items(sid)
+    groups <- structure$groups
+    qlist <- flatten_survey_groups(groups)
     survey_info <- load_survey_info(sid)
     
     if (length(qlist) == 0) {
@@ -302,16 +298,10 @@ shinyServer(function(input, output, session) {
       return()
     }
     
-    # id をキーにした名前付きリストに変換
-    ids <- names(qlist)
-    
-    store$order     <- ids
-    store$questions <- qlist
     store$groups <- groups
-    store$group_order <- names(groups)
-    group_settings_draft(list())
-    editing_question_options(ids[[1]])
-    current_id(sid)
+    editing_question_options(names(qlist)[1])
+    current_id(survey_info$id)
+    updateTextInput(session, "survey_id", value = survey_info$id)
     updateTextInput(session, "survey_title", value = survey_info$title)
     showNotification("アンケートを読み込みました", type = "message")
   })
@@ -322,54 +312,40 @@ shinyServer(function(input, output, session) {
     preset <- standard_presets[[input$preset_name]]
     req(preset)
 
-    store$questions <- capture_question_editor_inputs(store$questions)
-    qs <- store$questions
-    groups <- store$groups
-    group_order <- store$group_order
-    group_id <- UUIDgenerate()
-    groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
-    group_order <- c(group_order, group_id)
-    ids <- character(0)
-
+    groups <- capture_questions()
+    group_id <- next_editor_key("group")
+    group <- list(id = NULL, title = next_group_title(groups), settings = list(page = FALSE), questions = list())
     for (template in preset$questions) {
-      qid <- UUIDgenerate()
-      template$id <- qid
-      template$group_id <- group_id
-      template$settings <- list(randomize_choices = FALSE, required = TRUE)
-      qs[[qid]] <- template
-      ids <- c(ids, qid)
+      template$id <- NULL
+      template$settings <- modifyList(if (is.null(template$settings)) list() else template$settings,
+                                      list(randomize_choices = FALSE, required = TRUE))
+      group$questions[[next_editor_key("question")]] <- template
     }
-
-    store$groups <- groups
-    store$group_order <- group_order
-    store$questions <- qs
-    store$order <- c(store$order, ids)
+    store$groups <- c(groups, setNames(list(group), group_id))
     showNotification(paste0(preset$title, "を追加しました。保存して反映してください。"), type = "message")
 
   })
 
   observeEvent(input$add_group, {
-    store$questions <- capture_question_editor_inputs(store$questions)
+    capture_questions()
     groups <- store$groups
-    group_id <- UUIDgenerate()
-    groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
+    group_id <- next_editor_key("group")
+    groups[[group_id]] <- list(id = NULL, title = next_group_title(groups), settings = list(page = FALSE))
     store$groups <- groups
-    store$group_order <- c(store$group_order, group_id)
   })
 
   observeEvent(input$toggle_group_settings, {
     group_id <- input$toggle_group_settings
-    req(group_id %in% store$group_order)
-    group_index <- match(group_id, store$group_order)
-    previous_group_ids <- if (group_index > 1) store$group_order[seq_len(group_index - 1)] else character()
-    previous_ids <- store$order[vapply(store$questions[store$order], function(q) q$group_id %in% previous_group_ids, logical(1))]
+    group_order <- names(store$groups)
+    req(group_id %in% group_order)
+    group_index <- match(group_id, group_order)
+    previous_group_ids <- if (group_index > 1) group_order[seq_len(group_index - 1)] else character()
+    previous_questions <- flatten_survey_groups(store$groups[previous_group_ids])
     active_group_settings(group_id)
     group <- store$groups[[group_id]]
-    drafts <- group_settings_draft()
-    if (!is.null(drafts[[group_id]])) group$settings <- drafts[[group_id]]
     showModal(modalDialog(
       title = "グループ設定",
-      question_group_settings_ui(group_id, group, store$questions[previous_ids]),
+      question_group_settings_ui(group_id, group, previous_questions),
       footer = NULL,
       easyClose = TRUE
     ))
@@ -377,7 +353,7 @@ shinyServer(function(input, output, session) {
 
   observe({
     group_id <- active_group_settings()
-    req(!is.null(group_id), group_id %in% store$group_order)
+    req(!is.null(group_id), group_id %in% names(store$groups))
     page <- input[[paste0("group_page_", group_id)]]
     randomize <- input[[paste0("group_randomize_questions_", group_id)]]
     has_visibility <- input[[paste0("group_has_visibility_", group_id)]]
@@ -395,40 +371,57 @@ shinyServer(function(input, output, session) {
       )
     }
 
-    drafts <- group_settings_draft()
-    if (!identical(drafts[[group_id]], settings)) {
-      drafts[[group_id]] <- settings
-      group_settings_draft(drafts)
+    groups <- store$groups
+    if (!identical(groups[[group_id]]$settings, settings)) {
+      groups[[group_id]]$settings <- settings
+      store$groups <- groups
     }
   })
 
   observeEvent(input$move_question, {
     parts <- strsplit(input$move_question, "|", fixed = TRUE)[[1]]
-    req(length(parts) == 2, parts[1] %in% names(store$questions))
+    req(length(parts) == 2, parts[1] %in% names(flatten_survey_groups(store$groups)))
     qid <- parts[1]
-    store$questions <- capture_question_editor_inputs(store$questions)
-    group_id <- store$questions[[qid]]$group_id
-    ids <- store$order[vapply(store$questions[store$order], function(q) identical(q$group_id, group_id), logical(1))]
-    if (length(ids) > 1) {
-      i <- match(qid, ids) + if (parts[2] == "down") 1 else -1
-      if (i < 1 || i > length(ids)) return()
-      positions <- which(store$order %in% ids)
-      ids <- ids[order(match(ids, store$order))]
-      old <- match(qid, ids)
-      ids[c(old, i)] <- ids[c(i, old)]
-      order <- store$order
-      order[positions] <- ids
-      store$order <- order
-    } else {
-      i <- match(group_id, store$group_order) + if (parts[2] == "down") 1 else -1
-      if (i < 1 || i > length(store$group_order)) return()
-      group_order <- store$group_order
-      old <- match(group_id, group_order)
-      group_order[c(old, i)] <- group_order[c(i, old)]
-      store$group_order <- group_order
-    }
+    capture_questions()
+    group_id <- names(store$groups)[which(vapply(store$groups, function(group) qid %in% names(group$questions), logical(1)))[1]]
+    ids <- names(store$groups[[group_id]]$questions)
+    store$groups[[group_id]]$questions <- store$groups[[group_id]]$questions[move_item(ids, qid, parts[2])]
   })
 
+  observeEvent(input$group_action, {
+    parts <- strsplit(input$group_action, "|", fixed = TRUE)[[1]]
+    action <- parts[1]
+    group_id <- parts[2]
+    req(length(parts) >= 2, group_id %in% names(store$groups))
+    capture_questions()
+    if (action == "move") {
+      req(length(parts) == 3)
+      store$groups <- store$groups[move_item(names(store$groups), group_id, parts[3])]
+      return()
+    }
+    groups <- store$groups
+    group_order <- names(store$groups)
+    if (action == "copy") {
+      new_id <- next_editor_key("group")
+      copy <- groups[[group_id]]
+      copy$id <- NULL
+      copy$questions <- lapply(copy$questions, duplicate_question)
+      names(copy$questions) <- vapply(copy$questions, function(question) next_editor_key("question"), character(1))
+      groups[[new_id]] <- copy
+      group_order <- append(group_order, new_id, after = match(group_id, group_order))
+      if (length(copy$questions)) editing_question_options(names(copy$questions)[1])
+    } else if (action == "delete") {
+      removed_ids <- names(groups[[group_id]]$questions)
+      groups[[group_id]] <- NULL
+      group_order <- setdiff(group_order, group_id)
+      if (!is.null(editing_question_options()) && editing_question_options() %in% removed_ids) {
+        remaining <- flatten_survey_groups(groups[group_order])
+        editing_question_options(if (length(remaining)) names(remaining)[1] else NULL)
+      }
+      if (identical(active_group_settings(), group_id)) { active_group_settings(NULL); removeModal() }
+    } else return()
+    store$groups <- sanitize_group_visibility(groups[group_order])
+  })
   observeEvent(input$group_layout, {
     payload <- tryCatch(jsonlite::fromJSON(input$group_layout, simplifyVector = FALSE), error = function(e) NULL)
     if (is.null(payload)) return()
@@ -439,13 +432,14 @@ shinyServer(function(input, output, session) {
     question_ids <- unlist(lapply(layout, function(group) unlist(group$question_ids, use.names = FALSE)), use.names = FALSE)
     if (anyNA(group_ids) || any(!nzchar(group_ids)) || anyDuplicated(group_ids) ||
         anyDuplicated(question_ids) || any(!nzchar(question_ids)) ||
-        length(question_ids) != length(store$order) ||
-        !setequal(question_ids, store$order)) {
+        length(question_ids) != length(flatten_survey_groups(store$groups)) ||
+        !setequal(question_ids, names(flatten_survey_groups(store$groups)))) {
       showNotification("ドラッグ後の配置を反映できませんでした。", type = "error")
       return()
     }
 
-    questions <- capture_question_editor_inputs(store$questions)
+    groups <- capture_questions()
+    questions <- flatten_survey_groups(groups)
     question_drafts <- if (is.list(payload) && !is.null(payload$question_drafts)) payload$question_drafts else list()
     for (draft in question_drafts) {
       question_id <- as.character(draft$id)
@@ -455,7 +449,7 @@ shinyServer(function(input, output, session) {
         if (!is.null(draft[[field]])) question[[field]] <- as.character(draft[[field]])
       }
       if (!is.null(draft$options)) {
-        options <- trimws(strsplit(as.character(draft$options), "\n", fixed = TRUE)[[1]])
+        options <- unique(trimws(as.character(unlist(draft$options, use.names = FALSE))))
         options <- options[nzchar(options)]
         question$options <- if (length(options)) options else NULL
       }
@@ -465,6 +459,10 @@ shinyServer(function(input, output, session) {
         if (length(value_text) == 1 && !is.na(value_text) && nzchar(value_text)) {
           question[[field]] <- suppressWarnings(as.numeric(value))
         }
+      }
+      if (!is.null(draft$display)) {
+        if (is.null(question$settings)) question$settings <- list()
+        question$settings$display <- as.character(draft$display)
       }
       if (!is.null(draft$randomize_choices) || !is.null(draft$required)) {
         settings <- question$settings
@@ -476,37 +474,21 @@ shinyServer(function(input, output, session) {
       }
       questions[[question_id]] <- question
     }
-    for (group in layout) {
-      group_id <- as.character(group$group_id)
-      for (question_id in unlist(group$question_ids, use.names = FALSE)) {
-        questions[[question_id]]$group_id <- group_id
-      }
-    }
-
     groups <- store$groups
     for (group_id in setdiff(group_ids, names(groups))) {
       groups[[group_id]] <- list(
-        id = group_id,
+        id = NULL,
         title = paste0("設問グループ", length(groups) + 1),
         settings = list(page = FALSE)
       )
     }
-    for (group_id in group_ids) {
-      condition <- groups[[group_id]]$settings$visibility
-      if (is.null(condition)) next
-      source_question <- questions[[condition$question_id]]
-      source_position <- if (is.null(source_question)) NA_integer_ else match(source_question$group_id, group_ids)
-      target_position <- match(group_id, group_ids)
-      if (is.na(source_position) || is.na(target_position) || source_position >= target_position) {
-        groups[[group_id]]$settings$visibility <- NULL
-      }
-    }
-
     groups <- groups[group_ids]
-    store$group_order <- group_ids
-    store$order <- question_ids
-    store$questions <- questions
-    store$groups <- groups
+    for (group in layout) {
+      group_id <- as.character(group$group_id)
+      ids <- unlist(group$question_ids, use.names = FALSE)
+      groups[[group_id]]$questions <- lapply(questions[ids], function(question) { question$group_id <- NULL; question })
+    }
+    store$groups <- sanitize_group_visibility(groups)
   })
   
   # ---------- 設問の挿入・編集 ----------
@@ -514,104 +496,78 @@ shinyServer(function(input, output, session) {
     payload <- strsplit(input$insert_question, "|", fixed = TRUE)[[1]]
     if (!length(payload) || !nzchar(payload[1])) return()
     kind <- payload[1]
-    store$questions <- capture_question_editor_inputs(store$questions)
-    qid <- UUIDgenerate()
+    capture_questions()
     groups <- store$groups
-    group_order <- store$group_order
-    order <- store$order
-
-    if (!length(group_order)) {
-      group_id <- UUIDgenerate()
-      groups[[group_id]] <- list(id = group_id, title = next_group_title(groups), settings = list(page = FALSE))
-      group_order <- c(group_order, group_id)
+    group_order <- names(groups)
+    if (!length(groups)) {
+      group_id <- next_editor_key("group")
+      groups[[group_id]] <- list(id = NULL, title = next_group_title(groups), settings = list(page = FALSE))
     }
+    group_order <- names(groups)
+    qid <- next_editor_key("question")
+    question <- list(id = NULL, title = "", desc = "", type = "text", options = NULL,
+                     settings = list(randomize_choices = FALSE, required = TRUE), min = NULL, max = NULL)
     if (kind == "in") {
-      if (length(payload) < 3 || !payload[2] %in% group_order || !payload[3] %in% order ||
-          !identical(store$questions[[payload[3]]]$group_id, payload[2])) return()
+      if (length(payload) < 3 || !payload[2] %in% group_order || !payload[3] %in% names(groups[[payload[2]]]$questions)) return()
       group_id <- payload[2]
-      insert_at <- match(payload[3], order)
-    } else if (kind == "after_group" && length(payload) >= 2 && payload[2] %in% group_order) {
-      group_id <- payload[2]
-      group_positions <- which(vapply(store$questions[order], function(q) identical(q$group_id, group_id), logical(1)))
-      insert_at <- if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
+      items <- groups[[group_id]]$questions
+      items <- append(items, setNames(list(question), qid), after = match(payload[3], names(items)) - 1L)
     } else {
-      group_id <- tail(group_order, 1)
-      group_positions <- which(vapply(store$questions[order], function(q) identical(q$group_id, group_id), logical(1)))
-      insert_at <- if (length(group_positions)) tail(group_positions, 1) + 1 else length(order) + 1
+      group_id <- if (kind == "after_group" && length(payload) >= 2 && payload[2] %in% group_order) payload[2] else tail(group_order, 1)
+      items <- append(groups[[group_id]]$questions, setNames(list(question), qid))
     }
-
-    questions <- store$questions
-    questions[[qid]] <- list(id = qid, group_id = group_id, title = "", desc = "", type = "text", options = NULL,
-                             settings = list(randomize_choices = FALSE, required = TRUE), min = NULL, max = NULL)
-    store$questions <- questions
-    store$order <- append(order, qid, after = insert_at - 1)
+    groups[[group_id]]$questions <- items
     store$groups <- groups
-    store$group_order <- group_order
     editing_question_options(qid)
   })
 
   # ---------- 削除 ----------
-  observeEvent(input$delete_q, ignoreInit = TRUE, {
-    id <- input$delete_q
-    req(nzchar(id))
-    
-    req(id %in% names(store$questions))
-    questions <- capture_question_editor_inputs(store$questions)
-    qs <- questions
-    qs[[id]] <- NULL
-    store$questions <- qs
-    store$order     <- store$order[store$order != id]
-    if (identical(editing_question_options(), id)) {
-      editing_question_options(if (length(store$order)) store$order[[1]] else NULL)
-    }
-    groups <- store$groups
-    for (group_id in store$group_order) {
-      condition <- groups[[group_id]]$settings$visibility
-      if (!is.null(condition) && identical(condition$question_id, id)) {
-        groups[[group_id]]$settings$visibility <- NULL
-      }
-    }
-    store$groups <- groups
+  observeEvent(input$question_action, {
+    parts <- strsplit(input$question_action, "|", fixed = TRUE)[[1]]
+    action <- parts[1]
+    id <- parts[2]
+    req(length(parts) == 2, id %in% names(flatten_survey_groups(store$groups)))
+    capture_questions()
+    group_id <- names(store$groups)[which(vapply(store$groups, function(group) id %in% names(group$questions), logical(1)))[1]]
+    items <- store$groups[[group_id]]$questions
+    if (action == "copy") {
+      copy_id <- next_editor_key("question")
+      items <- append(items, setNames(list(duplicate_question(items[[id]])), copy_id), after = match(id, names(items)))
+      editing_question_options(copy_id)
+    } else if (action == "delete") {
+      items[[id]] <- NULL
+      store$groups[[group_id]]$questions <- items
+      remaining <- flatten_survey_groups(store$groups)
+      if (identical(editing_question_options(), id)) editing_question_options(if (length(remaining)) names(remaining)[1] else NULL)
+      store$groups <- sanitize_group_visibility(store$groups)
+    } else return()
+    store$groups[[group_id]]$questions <- items
   })
 
   # ---------- 設問一覧 UI ----------
   output$question_list_ui <- renderUI({
     question_group_board_ui(
       groups = store$groups,
-      group_order = store$group_order,
-      questions = store$questions,
-      question_order = store$order,
       editing_question_options = editing_question_options()
     )
   })
   
   # ---------- プレビュー ----------
   output$answer_preview_ui <- renderUI({
-    if (length(store$order) == 0)
+    if (!length(flatten_survey_groups(store$groups)))
       return(p("設問が作成されるとプレビューが表示されます。"))
     
     tagList(
-      lapply(store$group_order, function(group_id) {
-        ids <- store$order[vapply(store$questions[store$order], function(q) identical(q$group_id, group_id), logical(1))]
+      lapply(names(store$groups), function(group_id) {
         tagList(
           h3(store$groups[[group_id]]$title),
-          lapply(ids, function(id) {
-            q <- store$questions[[id]]
+          lapply(names(store$groups[[group_id]]$questions), function(id) {
+            q <- store$groups[[group_id]]$questions[[id]]
             label <- tags$div(
               strong(q$title),
               tags$div(style = "color:#666;font-size:0.9em;", q$desc)
             )
-            opts <- unlist(q$options)
-            switch(
-              q$type,
-              "single_numeric" = radioButtons(paste0("p_", id), label, choices = opts),
-              "single_text" = if (identical(q$settings$display, "dropdown")) selectInput(paste0("p_", id), label, choices = opts) else radioButtons(paste0("p_", id), label, choices = opts),
-              "multiple" = checkboxGroupInput(paste0("p_", id), label, choices = opts),
-              "numeric"  = numericInput(paste0("p_", id), label, value = NA, min = q$min, max = q$max, step = "any"),
-              "text"     = if (isTRUE(q$settings$long_text)) textAreaInput(paste0("p_", id), label) else textInput(paste0("p_", id), label),
-              "slider"   = sliderInput(paste0("p_", id), label, min = q$min, max = q$max, value = q$min),
-              "date"     = dateInput(paste0("p_", id), label, value = Sys.Date())
-            )
+            question_response_input(paste0("p_", id), q, label = label)
           })
         )
       })
@@ -620,7 +576,7 @@ shinyServer(function(input, output, session) {
   
   # ---------- 保存処理 ----------
   observeEvent(input$save_survey, {
-    if (length(store$order) == 0) {
+    if (!length(flatten_survey_groups(store$groups))) {
       showNotification("設問が1件もありません", type = "error")
       return()
     }
@@ -629,80 +585,32 @@ shinyServer(function(input, output, session) {
       return()
     }
 
-    questions_to_save <- capture_question_editor_inputs(store$questions)
+    groups_to_save <- capture_questions()
+    questions_to_save <- flatten_survey_groups(groups_to_save)
     for (qid in names(questions_to_save)) {
       question <- questions_to_save[[qid]]
-      if (is.null(question$title) || !nzchar(trimws(question$title))) {
-        showNotification("設問タイトルを入力してください。", type = "error")
-        return()
-      }
-      if (question$type == "single_numeric") {
-        if (is.null(question$min) || is.null(question$max) || question$min > question$max ||
-            question$min != floor(question$min) || question$max != floor(question$max)) {
-          showNotification("数字択一の範囲は整数で指定してください。", type = "error")
-          return()
-        }
-      } else if (question$type %in% c("single_text", "multiple") && !length(question$options)) {
-          showNotification("選択肢を1つ以上入力してください。", type = "error")
-          return()
-      } else if (question$type == "slider") {
-        if (is.null(question$min) || is.null(question$max) || question$max <= question$min) {
-          showNotification("上限は下限より大きくしてください。", type = "error")
-          return()
-        }
-      } else if (question$type == "numeric" && !is.null(question$min) && !is.null(question$max) && question$min > question$max) {
-        showNotification("上限は下限以上にしてください。", type = "error")
-        return()
-      }
+      error <- if (is.null(question$title) || !nzchar(trimws(question$title))) "設問タイトルを入力してください。"
+      else if (question$type == "single_numeric" && (is.null(question$min) || is.null(question$max) || question$min > question$max || question$min != floor(question$min) || question$max != floor(question$max))) "数字択一の範囲は整数で指定してください。"
+      else if (question$type %in% c("single_text", "multiple") && !length(question$options)) "選択肢を1つ以上入力してください。"
+      else if (question$type == "numeric" && !is.null(question$min) && !is.null(question$max) && question$min > question$max) "上限は下限以上にしてください。"
+      else NULL
+      if (!is.null(error)) { showNotification(error, type = "error"); return() }
     }
 
-    groups_to_save <- store$groups
-    settings_draft <- group_settings_draft()
-    for (group_id in store$group_order) {
-      if (!is.null(settings_draft[[group_id]])) groups_to_save[[group_id]]$settings <- settings_draft[[group_id]]
-    }
-
-    sid <- trimws(input$survey_id)
-    if (!nzchar(sid)) sid <- paste0("survey_", UUIDgenerate())
     survey_title <- trimws(if (is.null(input$survey_title)) "" else input$survey_title)
-    previous_sid <- current_id()
-    is_copy <- !is.null(previous_sid) && nzchar(previous_sid) && !identical(previous_sid, sid)
-
-    if (is_copy && sid %in% names(load_db())) {
-      showNotification("変更先のアンケートIDはすでに使われています。", type = "error")
-      return()
-    }
 
     tryCatch({
-      saved_state <- if (is_copy) clone_survey_state(questions_to_save, store$order, groups_to_save, store$group_order) else list(
-        questions = questions_to_save,
-        order = store$order,
-        groups = groups_to_save,
-        group_order = store$group_order
-      )
-
-      save_db(
-        survey_id = sid,
+      id_map <- save_db(
+        survey_id = current_id(),
         password_hash = hash_pw(input$survey_pw),
-        questions_list = saved_state$questions,
-        question_ids = saved_state$order,
-        groups_list = saved_state$groups,
-        group_ids = saved_state$group_order,
+        groups_list = groups_to_save,
         survey_title = survey_title
       )
 
-      store$questions <- saved_state$questions
-      store$order <- saved_state$order
-      store$groups <- saved_state$groups
-      store$group_order <- saved_state$group_order
-      group_settings_draft(list())
+      store$groups <- remember_saved_ids(groups_to_save, id_map)
 
-      if (is_copy) {
-        editing_question_options(if (length(store$order)) store$order[[1]] else NULL)
-      }
-      current_id(sid)
-      updateTextInput(session, "survey_id", value = sid)
-      showNotification(paste("保存しました（ID:", sid, ")"), type = "message")
+      current_id(id_map$survey_id)
+      showNotification(paste("保存しました（ID:", id_map$survey_id, ")"), type = "message")
     }, error = function(e) {
       showNotification(paste("保存エラー:", e$message), type = "error")
     })
