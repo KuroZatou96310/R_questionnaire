@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>アンケートアプリ 評価実験</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f7f7f7;color:#222;font-family:"Yu Gothic",Meiryo,sans-serif;line-height:1.8}.page{max-width:820px;margin:0 auto;background:#fff;min-height:100vh;padding:48px 56px 80px}h1{font-size:32px;margin:0 0 38px;border-bottom:3px solid #244f86;padding-bottom:14px}h2{font-size:25px;color:#244f86;margin:44px 0 14px;border-left:6px solid #244f86;padding-left:12px}h3{font-size:19px;margin:25px 0 6px;color:#333}p{font-size:17px;margin:10px 0}ul{font-size:17px;margin:8px 0 14px;padding-left:1.5em}.url{display:block;color:#145cb3;background:#f0f5fb;border:1px solid #c8d8ec;border-radius:5px;padding:8px 12px;word-break:break-all;text-decoration:none;font-weight:600;margin:8px 0 14px}.box{border:1px solid #d6d6d6;border-radius:6px;background:#fafafa;padding:14px 18px;margin:12px 0 20px}.question{margin:15px 0;padding:12px 16px;border-left:3px solid #9eb8d8;background:#fbfcfe}.question p{margin:3px 0;font-size:16px}.feature-image{display:block;width:100%;height:auto;border:1px solid #ddd;border-radius:6px;margin:18px 0 24px}.label{font-weight:700;color:#555}.note{color:#666;font-size:15px}.end{margin-top:46px;padding-top:22px;border-top:1px solid #ddd;color:#666;font-size:14px}@media(max-width:700px){.page{padding:28px 22px 60px}h1{font-size:27px}h2{font-size:22px}p,ul{font-size:16px}}
+</style>
+</head>
+<body><main class="page">
+<h1>アンケートアプリ 評価実験</h1>
+<p>以下の手順に沿って、アンケートの作成、回答、分析を体験してください。</p>
+<p class="note">操作に迷った箇所や分かりにくかった点も評価の対象です。分からない場合は、そのまま質問してください。</p>
+
+<h2>1　アンケートを作成</h2>
+<p>次の画面を開き、アンケート作成の操作性や機能を確認してください。</p>
+<a class="url" href="http://localhost:3838/admin/" target="_blank" rel="noopener">http://localhost:3838/admin/</a>
+<p>設問を3つ程度追加し、自由に設問内容を設定してください。作りたい設問が思い浮かばない場合は、プリセットを使用するか、以下の例を参考にしてください。</p>
+
+<div class="question"><p><span class="label">設問1</span></p><p>設問形式：択一選択</p><p>設問名：あなたの職業はなんですか</p><p>選択肢：学生、医師、弁護士、戦士、エンジニア</p></div>
+<div class="question"><p><span class="label">設問2</span></p><p>設問形式：スライダー</p><p>設問名：あなたの年齢をお答えください</p><p>下限：0　上限：200</p></div>
+<div class="question"><p><span class="label">設問3</span></p><p>設問形式：自由記述</p><p>設問名：今日の朝ごはんをお答えください</p></div>
+
+<p>設問を作成し終えたらアンケートを保存し、表示された回答用URLを使って次へ進んでください。</p>
+<img class="feature-image" src="作成画面_機能紹介.png" alt="アンケート作成画面の機能紹介">
+
+<h2>2　回答画面を確認</h2>
+<p>保存したアンケートの回答用URLを開いてください。</p>
+<p>自分で作成したアンケートが表示されます。画面のデザインや、回答までの使いやすさを確認してください。入力内容は自由ですので、回答を送信するところまで行ってください。</p>
+
+<h2>3　DEMOデータを分析</h2>
+<p>こちらで用意したDEMOデータを使用して、分析ページの有用性や使いやすさを確認してください。</p>
+<a class="url" href="http://localhost:3838/analytics/?id=DEMO" target="_blank" rel="noopener">http://localhost:3838/analytics/?id=DEMO</a>
+<p>パスワードに <strong>DEMO</strong> と入力して、アンケートを読み込んでください。</p>
+<p>「X高校卒業生アンケート」というアンケートが表示されます。</p>
+
+<div class="box"><h3>確認する機能</h3><ul><li>単純集計</li><li>クロス集計</li><li>数値分析</li></ul><p>それぞれの機能や表示されるグラフを見て、有用性や使いやすさを確認してください。</p></div>
+
+<p>今回のデータの「年収（数値）」では、1人の回答結果によって平均や数値分析が大きく影響されています。</p>
+<p class="note">時間に余裕がある場合は、回答条件の絞り込み機能も試してください。他の回答から大きく離れた数値を除外して、平均や数値分析のグラフがどのように変化するか確認できます。</p>
+<img class="feature-image" src="分析画面_機能紹介.png" alt="アンケート分析画面の機能紹介">
+
+<h2>4　評価アンケート</h2>
+<p>最後に、今回のアプリの使いやすさや有用性について回答してください。</p>
+<a class="url" href="http://localhost:3838/answer/?id=Q6szOrFOcMQyrpKm" target="_blank" rel="noopener">http://localhost:3838/answer/?id=Q6szOrFOcMQyrpKm</a>
+
+<div class="end">評価アンケートの回答が終わったら、実験は終了です。ご協力ありがとうございました。</div>
+</main></body>
+</html>
