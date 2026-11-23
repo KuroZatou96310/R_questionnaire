@@ -24,7 +24,20 @@ question_response_input <- function(id, question, value = NULL, label = NULL) {
       radioButtons(id, label, options, selected = selected)
     ),
     multiple = checkboxGroupInput(id, label, options, selected = selected, inline = identical(display, "horizontal")),
-    numeric = numericInput(id, label, value = if (length(selected)) as.numeric(selected[1]) else NA, min = question$min, max = question$max, step = "any"),
+    numeric = {
+      numeric_min <- if (!is.null(question$min) && length(question$min) && is.finite(suppressWarnings(as.numeric(question$min[1])))) as.numeric(question$min[1]) else NULL
+      numeric_max <- if (!is.null(question$max) && length(question$max) && is.finite(suppressWarnings(as.numeric(question$max[1])))) as.numeric(question$max[1]) else NULL
+      numeric_value <- if (length(selected)) suppressWarnings(as.numeric(selected[1])) else NA_real_
+      if (is.null(numeric_min) && is.null(numeric_max)) {
+        numericInput(id, label, value = numeric_value, step = "any")
+      } else if (is.null(numeric_min)) {
+        numericInput(id, label, value = numeric_value, max = numeric_max, step = "any")
+      } else if (is.null(numeric_max)) {
+        numericInput(id, label, value = numeric_value, min = numeric_min, step = "any")
+      } else {
+        numericInput(id, label, value = numeric_value, min = numeric_min, max = numeric_max, step = "any")
+      }
+    },
     text = if (isTRUE(settings$long_text)) textAreaInput(id, label, value = if (length(selected)) selected[1] else "", rows = 3) else textInput(id, label, value = if (length(selected)) selected[1] else ""),
     date = {
       control <- dateInput(id, label, value = if (length(selected)) selected[1] else Sys.Date())

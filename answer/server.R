@@ -205,6 +205,36 @@ shinyServer(function(input, output, session){
 
     visible_ids <- visible_group_ids()
     visible_questions <- names(qs)[vapply(qs, function(q) q$group_id %in% visible_ids, logical(1))]
+
+    # 自由入力の数値設問は、ブラウザの min/max 属性だけに頼らず、
+    # 送信時にも範囲を検証する。これにより、直接入力やブラウザ差異でも
+    # 設問で指定した上限・下限を確実に守る。
+    range_errors <- character()
+    for (question_id in visible_questions) {
+      question <- qs[[question_id]]
+      if (!identical(question$type, "numeric")) next
+      value <- current_answer(question_id)
+      if (is.null(value) || !length(value) || is.na(value[1]) || !nzchar(trimws(as.character(value[1])))) next
+      numeric_value <- suppressWarnings(as.numeric(value[1]))
+      if (is.na(numeric_value)) next
+      minimum <- if (!is.null(question$min) && length(question$min)) suppressWarnings(as.numeric(question$min[1])) else NA_real_
+      maximum <- if (!is.null(question$max) && length(question$max)) suppressWarnings(as.numeric(question$max[1])) else NA_real_
+      if (length(minimum) && !is.na(minimum) && numeric_value < minimum) {
+        range_errors <- c(range_errors, sprintf("「%s」は %s 以上で入力してください。", question$title, minimum))
+      } else if (length(maximum) && !is.na(maximum) && numeric_value > maximum) {
+        range_errors <- c(range_errors, sprintf("「%s」は %s 以下で入力してください。", question$title, maximum))
+      }
+    }
+    if (length(range_errors)) {
+      showModal(modalDialog(
+        title = "入力値を確認してください",
+        tags$ul(lapply(range_errors, tags$li)),
+        easyClose = TRUE,
+        footer = modalButton("戻る")
+      ))
+      return()
+    }
+
     unanswered_ids <- missing_questions(visible_questions, qs)
 
     if (length(unanswered_ids)) {

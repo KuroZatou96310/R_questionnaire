@@ -161,11 +161,11 @@ shinyServer(function(input, output, session) {
       textInput("survey_title", "アンケート名", value = survey_title_initial(), placeholder = "例：新UIの使いやすさアンケート"),
       hr(), h4("標準化プリセット"),
       selectInput("preset_name", "プリセットを選択", choices = c(
-        "選択してください" = "", "SUS（システムの使いやすさ）" = "SUS",
-        "UMUX-Lite（使いやすさ・有用性）" = "UMUX-Lite", "UEQ（製品・サービスのユーザー体験）" = "UEQ",
-        "UEQ-S（ユーザー体験の短縮版）" = "UEQ-S", "NASA-TLX（作業負荷）" = "NASA-TLX",
-        "TAM（技術受容・導入意向）" = "TAM", "GEQ（ゲーム・体験の評価）" = "GEQ",
-        "IMI（活動への内発的動機づけ）" = "IMI"
+        "選択してください" = "", "SUS（システムの使いやすさ・10項目）" = "SUS",
+        "UMUX-Lite（使いやすさ・有用性・2項目）" = "UMUX-Lite", "UEQ（製品・サービスのユーザー体験・26項目）" = "UEQ",
+        "UEQ-S（ユーザー体験の短縮版・8項目）" = "UEQ-S", "NASA-TLX（作業負荷・6項目）" = "NASA-TLX",
+        "TAM（技術受容・導入意向・6項目）" = "TAM", "GEQ（ゲーム・体験の評価・5項目）" = "GEQ",
+        "IMI（活動への内発的動機づけ・7項目）" = "IMI"
       )),
       actionButton("add_preset", "プリセットを設問に追加"),
       helpText("選択した質問群を現在の設問一覧の末尾へ追加します。"), hr(),
