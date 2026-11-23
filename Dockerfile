@@ -28,6 +28,9 @@ RUN git clone --depth 1 \
     https://github.com/KuroZatou96310/R_questionnaire.git \
     /srv/shiny-server
 
+# 評価実験用の案内ページと画像を公開
+COPY docs /srv/shiny-server/docs
+
 # データベース用ディレクトリ作成と権限付与
 RUN mkdir -p /srv/shiny-server/data \
     && chown shiny:shiny /srv/shiny-server/data
