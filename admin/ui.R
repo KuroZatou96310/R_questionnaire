@@ -6,7 +6,7 @@ shinyUI(fluidPage(
     tags$link(rel = "stylesheet", type = "text/css", href = "questionnaire-admin.css?v=20261123-4"),
     tags$script(src = "questionnaire-dnd.js?v=20261122-2")
   ),
-  titlePanel("アンケート生成アプリ（admin）"),
+  titlePanel("アンケート作成"),
   
   sidebarLayout(
     sidebarPanel(
