@@ -93,7 +93,10 @@ question_options_ui <- function(question_id, question) {
       condition = sprintf("input['question_edit_type_%s'] == 'text'", question_id),
       checkboxInput(long_text_id, "長文入力", isTRUE(settings$long_text))
     ),
-    checkboxInput(randomize_id, "選択肢をランダム表示", isTRUE(settings$randomize_choices)),
+    conditionalPanel(
+      condition = sprintf("input['question_edit_type_%s'] == 'single_numeric' || input['question_edit_type_%s'] == 'single_text' || input['question_edit_type_%s'] == 'multiple'", question_id, question_id, question_id),
+      checkboxInput(randomize_id, "選択肢をランダム表示", isTRUE(settings$randomize_choices))
+    ),
     checkboxInput(required_id, "回答必須", if (is.null(settings$required)) TRUE else isTRUE(settings$required)),
     NULL
   )
