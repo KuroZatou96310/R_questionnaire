@@ -116,6 +116,7 @@ shinyServer(function(input, output, session) {
   editor_mode <- reactiveVal(FALSE)
   home_survey_id <- reactiveVal("")
   survey_title_initial <- reactiveVal("")
+  generate_survey_id <- function() paste0(sample(c(letters, LETTERS, 0:9), 16, replace = TRUE), collapse = "")
   next_editor_key <- local({
     key <- 0L
     function(kind) { key <<- key + 1L; paste0("new_", kind, "_", key) }
@@ -725,6 +726,10 @@ shinyServer(function(input, output, session) {
     }
 
     entered_survey_id <- current_id()
+    if (is.null(entered_survey_id) || !nzchar(trimws(as.character(entered_survey_id)))) {
+      entered_survey_id <- generate_survey_id()
+      current_id(entered_survey_id)
+    }
 
     groups_to_save <- capture_questions()
     questions_to_save <- flatten_survey_groups(groups_to_save)
