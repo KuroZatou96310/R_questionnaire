@@ -25,7 +25,17 @@ shinyUI(fluidPage(
       selectInput(
         "preset_name",
         "プリセットを選択",
-        choices = c("選択してください" = "", "SUS", "UMUX-Lite", "UEQ", "UEQ-S", "NASA-TLX", "TAM", "GEQ", "IMI")
+        choices = c(
+          "選択してください" = "",
+          "SUS（システムの使いやすさ）" = "SUS",
+          "UMUX-Lite（使いやすさ・有用性）" = "UMUX-Lite",
+          "UEQ（製品・サービスのユーザー体験）" = "UEQ",
+          "UEQ-S（ユーザー体験の短縮版）" = "UEQ-S",
+          "NASA-TLX（作業負荷）" = "NASA-TLX",
+          "TAM（技術受容・導入意向）" = "TAM",
+          "GEQ（ゲーム・体験の評価）" = "GEQ",
+          "IMI（活動への内発的動機づけ）" = "IMI"
+        )
       ),
       actionButton("add_preset", "プリセットを設問に追加"),
       helpText("選択した質問群を現在の設問一覧の末尾へ追加します。"),

@@ -143,7 +143,7 @@ question_detail_panel_ui <- function(question_id, question) {
 }
 
 question_group_settings_ui <- function(group_id, group, previous_questions) {
-  settings <- group$settings
+  settings <- if (is.null(group$settings) || !is.list(group$settings)) list() else group$settings
   condition <- settings$visibility
   randomize_questions_id <- paste0("group_randomize_questions_", group_id)
   has_visibility_id <- paste0("group_has_visibility_", group_id)
@@ -151,7 +151,15 @@ question_group_settings_ui <- function(group_id, group, previous_questions) {
   condition_operator_id <- paste0("group_condition_operator_", group_id)
   condition_value_id <- paste0("group_condition_value_", group_id)
 
-  condition_choices <- setNames(names(previous_questions), vapply(previous_questions, `[[`, character(1), "title"))
+  condition_choices <- if (length(previous_questions)) {
+    titles <- vapply(previous_questions, function(question) {
+      title <- question$title
+      if (is.null(title) || length(title) == 0 || is.na(title[[1]])) "（無題の設問）" else as.character(title[[1]])
+    }, character(1))
+    setNames(names(previous_questions), titles)
+  } else {
+    character()
+  }
 
   tagList(
     checkboxInput(paste0("group_page_", group_id), "このグループをページとして表示", isTRUE(settings$page)),
@@ -236,8 +244,8 @@ question_group_board_ui <- function(groups, editing_question_options) {
         div(class = "group-actions",
           board_action("group_action", paste("move", group_id, "up", sep = "|"), "↑", group_index == 1),
           board_action("group_action", paste("move", group_id, "down", sep = "|"), "↓", group_index == length(group_order)),
-          board_action("group_action", paste("copy", group_id, sep = "|"), "複製"),
-          board_action("group_action", paste("delete", group_id, sep = "|"), "削除", danger = TRUE),
+          board_action("group_action", paste("copy", group_id, sep = "|"), "グループ複製"),
+          board_action("group_action", paste("delete", group_id, sep = "|"), "グループごと削除", danger = TRUE),
           board_action("toggle_group_settings", group_id, "グループ設定")
         )
       ),

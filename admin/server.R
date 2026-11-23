@@ -113,6 +113,9 @@ shinyServer(function(input, output, session) {
   current_id <- reactiveVal(NULL)
   editing_question_options <- reactiveVal(NULL)
   active_group_settings <- reactiveVal(NULL)
+  generate_survey_id <- function() {
+    paste0(sample(c(letters, LETTERS, 0:9), 8, replace = TRUE), collapse = "")
+  }
   next_editor_key <- local({
     key <- 0L
     function(kind) { key <<- key + 1L; paste0("new_", kind, "_", key) }
@@ -122,6 +125,8 @@ shinyServer(function(input, output, session) {
     survey_id <- getQueryString()$id
     if (!is.null(survey_id) && length(survey_id) && nzchar(trimws(survey_id))) {
       updateTextInput(session, "survey_id", value = trimws(survey_id))
+    } else {
+      updateTextInput(session, "survey_id", value = generate_survey_id())
     }
   }, ignoreInit = FALSE)
 
@@ -343,6 +348,9 @@ shinyServer(function(input, output, session) {
     previous_questions <- flatten_survey_groups(store$groups[previous_group_ids])
     active_group_settings(group_id)
     group <- store$groups[[group_id]]
+    if (is.null(group) || !is.list(group)) group <- list()
+    if (is.null(group$settings) || !is.list(group$settings)) group$settings <- list()
+    if (is.null(group$questions) || !is.list(group$questions)) group$questions <- list()
     showModal(modalDialog(
       title = "グループ設定",
       question_group_settings_ui(group_id, group, previous_questions),
@@ -360,10 +368,10 @@ shinyServer(function(input, output, session) {
     req(!is.null(page), !is.null(randomize), !is.null(has_visibility))
 
     settings <- list(page = isTRUE(page), randomize_questions = isTRUE(randomize))
-    if (isTRUE(has_visibility)) {
-      condition_question <- input[[paste0("group_condition_question_", group_id)]]
-      condition_value <- input[[paste0("group_condition_value_", group_id)]]
-      req(!is.null(condition_question), !is.null(condition_value), nzchar(condition_value))
+    condition_question <- input[[paste0("group_condition_question_", group_id)]]
+    condition_value <- input[[paste0("group_condition_value_", group_id)]]
+    if (isTRUE(has_visibility) && !is.null(condition_question) && nzchar(condition_question) &&
+        !is.null(condition_value) && nzchar(condition_value)) {
       settings$visibility <- list(
         question_id = condition_question,
         operator = input[[paste0("group_condition_operator_", group_id)]],
@@ -585,6 +593,13 @@ shinyServer(function(input, output, session) {
       return()
     }
 
+    # 保存時はサーバー側の初期値ではなく、画面に入力されたIDを必ず使用する。
+    entered_survey_id <- trimws(if (is.null(input$survey_id)) "" else as.character(input$survey_id))
+    if (!nzchar(entered_survey_id)) {
+      showNotification("アンケートIDを入力してください", type = "error")
+      return()
+    }
+
     groups_to_save <- capture_questions()
     questions_to_save <- flatten_survey_groups(groups_to_save)
     for (qid in names(questions_to_save)) {
@@ -601,7 +616,7 @@ shinyServer(function(input, output, session) {
 
     tryCatch({
       id_map <- save_db(
-        survey_id = current_id(),
+        survey_id = entered_survey_id,
         password_hash = hash_pw(input$survey_pw),
         groups_list = groups_to_save,
         survey_title = survey_title
@@ -609,8 +624,9 @@ shinyServer(function(input, output, session) {
 
       store$groups <- remember_saved_ids(groups_to_save, id_map)
 
-      current_id(id_map$survey_id)
-      showNotification(paste("保存しました（ID:", id_map$survey_id, ")"), type = "message")
+      current_id(entered_survey_id)
+      updateTextInput(session, "survey_id", value = entered_survey_id)
+      showNotification(paste("保存しました（ID:", entered_survey_id, ")"), type = "message")
     }, error = function(e) {
       showNotification(paste("保存エラー:", e$message), type = "error")
     })

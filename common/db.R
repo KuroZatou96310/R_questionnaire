@@ -2,10 +2,11 @@ library(jsonlite)
 library(digest)
 library(DBI)
 library(RSQLite)
+library(uuid)
 
 DATA_DIR <- Sys.getenv("QUESTIONNAIRE_DATA_DIR", "/srv/shiny-server/data")
 DB_FILE <- file.path(DATA_DIR, "questionnaire.db")
-db_last_id <- function(con) as.character(dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1])
+new_db_id <- function() UUIDgenerate()
 
 flatten_survey_groups <- function(groups) {
   questions <- list()
@@ -18,12 +19,12 @@ flatten_survey_groups <- function(groups) {
 }
 
 create_app_schema <- function(con) {
-  dbExecute(con, "CREATE TABLE surveys (survey_id INTEGER PRIMARY KEY, legacy_id TEXT UNIQUE, password_hash TEXT NOT NULL, title TEXT, description TEXT, created_at TEXT, updated_at TEXT)")
-  dbExecute(con, "CREATE TABLE question_groups (group_id INTEGER PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, title TEXT NOT NULL, order_index INTEGER NOT NULL, settings_json TEXT NOT NULL DEFAULT '{}')")
-  dbExecute(con, "CREATE TABLE questions (question_id INTEGER PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, group_id INTEGER NOT NULL REFERENCES question_groups(group_id) ON DELETE CASCADE, title TEXT, description TEXT, type TEXT, order_index INTEGER NOT NULL, options_json TEXT, settings_json TEXT NOT NULL DEFAULT '{}', min_value REAL, max_value REAL)")
+  dbExecute(con, "CREATE TABLE surveys (survey_id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, title TEXT, description TEXT, created_at TEXT, updated_at TEXT)")
+  dbExecute(con, "CREATE TABLE question_groups (group_id TEXT PRIMARY KEY, survey_id TEXT NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, title TEXT NOT NULL, order_index INTEGER NOT NULL, settings_json TEXT NOT NULL DEFAULT '{}')")
+  dbExecute(con, "CREATE TABLE questions (question_id TEXT PRIMARY KEY, survey_id TEXT NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, group_id TEXT NOT NULL REFERENCES question_groups(group_id) ON DELETE CASCADE, title TEXT, description TEXT, type TEXT, order_index INTEGER NOT NULL, options_json TEXT, settings_json TEXT NOT NULL DEFAULT '{}', min_value REAL, max_value REAL)")
   dbExecute(con, "CREATE INDEX questions_group_order ON questions(group_id, order_index)")
-  dbExecute(con, "CREATE TABLE responses (response_id INTEGER PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, submitted_at TEXT)")
-  dbExecute(con, "CREATE TABLE answers (answer_id INTEGER PRIMARY KEY,response_id INTEGER NOT NULL REFERENCES responses(response_id) ON DELETE CASCADE,question_id INTEGER NOT NULL REFERENCES questions(question_id) ON DELETE CASCADE,answer_text TEXT)")
+  dbExecute(con, "CREATE TABLE responses (response_id TEXT PRIMARY KEY, survey_id TEXT NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, submitted_at TEXT)")
+  dbExecute(con, "CREATE TABLE answers (answer_id TEXT PRIMARY KEY,response_id TEXT NOT NULL REFERENCES responses(response_id) ON DELETE CASCADE,question_id TEXT NOT NULL REFERENCES questions(question_id) ON DELETE CASCADE,answer_text TEXT)")
 }
 
 migrate_items_schema <- function(con) {
@@ -88,7 +89,7 @@ init_db <- function() {
     create_app_schema(con)
     return(invisible(TRUE))
   }
-  required <- list(surveys = c("survey_id", "legacy_id", "password_hash"),
+  required <- list(surveys = c("survey_id", "password_hash"),
     question_groups = c("group_id", "survey_id", "title", "order_index", "settings_json"),
     questions = c("question_id", "survey_id", "group_id", "settings_json", "min_value", "max_value"),
     responses = c("response_id", "survey_id"), answers = c("answer_id", "response_id", "question_id"))
@@ -96,13 +97,6 @@ init_db <- function() {
     all(required[[table]] %in% dbGetQuery(con, paste0("PRAGMA table_info(", table, ")"))$name)
   }, logical(1)))
   if (!has_columns) stop("未対応のDB構造です。データを変更せずに停止しました。")
-  integer_keys <- c(surveys = "survey_id", question_groups = "group_id", questions = "question_id", responses = "response_id", answers = "answer_id")
-  has_integer_keys <- all(vapply(names(integer_keys), function(table) {
-    info <- dbGetQuery(con, paste0("PRAGMA table_info(", table, ")"))
-    row <- info[info$name == integer_keys[[table]], ]
-    nrow(row) == 1 && toupper(row$type[1]) == "INTEGER" && row$pk[1] == 1
-  }, logical(1)))
-  if (!has_integer_keys) stop("未対応のDB構造です。データを変更せずに停止しました。")
   invisible(TRUE)
 }
 
@@ -133,22 +127,20 @@ hash_pw <- function(pw) digest(pw, algo = "sha256", serialize = FALSE)
 
 resolve_survey_id <- function(con, id) {
   if (is.null(id) || !length(id) || is.na(id[1]) || !nzchar(as.character(id[1]))) return(NA_character_)
-  row <- dbGetQuery(con, "SELECT survey_id FROM surveys WHERE CAST(survey_id AS TEXT) = ? OR legacy_id = ? ORDER BY CAST(survey_id AS TEXT) = ? DESC LIMIT 1",
-                    list(as.character(id[1]), as.character(id[1]), as.character(id[1])))
+  row <- dbGetQuery(con, "SELECT survey_id FROM surveys WHERE survey_id = ? LIMIT 1", list(as.character(id[1])))
   if (nrow(row)) as.character(row$survey_id[1]) else NA_character_
 }
 
 load_db <- function() with_db({
-  surveys <- dbGetQuery(con, "SELECT survey_id, legacy_id, password_hash FROM surveys")
+  surveys <- dbGetQuery(con, "SELECT survey_id, password_hash FROM surveys")
   if (nrow(surveys) == 0) return(list())
   result <- list()
-  for (i in seq_len(nrow(surveys))) if (!is.na(surveys$legacy_id[i])) result[[surveys$legacy_id[i]]] <- list(password = surveys$password_hash[i])
   for (i in seq_len(nrow(surveys))) result[[as.character(surveys$survey_id[i])]] <- list(password = surveys$password_hash[i])
   result
 })
 
 load_survey_info <- function(survey_id) with_db({
-  survey_id <- as.integer(resolve_survey_id(con, survey_id))
+  survey_id <- resolve_survey_id(con, survey_id)
   if (is.na(survey_id)) return(list(id = "", title = "", description = ""))
   survey <- dbGetQuery(con, "
     SELECT survey_id, title, description FROM surveys WHERE survey_id = ?
@@ -162,7 +154,7 @@ load_survey_info <- function(survey_id) with_db({
 })
 
 load_survey_items <- function(survey_id) with_db({
-  survey_id <- as.integer(resolve_survey_id(con, survey_id))
+  survey_id <- resolve_survey_id(con, survey_id)
   if (is.na(survey_id)) return(list(groups = list()))
   groups_rows <- dbGetQuery(con, "SELECT * FROM question_groups WHERE survey_id = ? ORDER BY order_index", list(survey_id))
   groups <- list()
@@ -200,6 +192,7 @@ load_survey_items <- function(survey_id) with_db({
 })
 
 save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title = NULL) with_db({
+  requested_id <- if (is.null(survey_id) || !length(survey_id) || is.na(survey_id[1])) "" else trimws(as.character(survey_id[1]))
   group_ids <- names(groups_list)
   questions_list <- flatten_survey_groups(groups_list)
   question_ids <- names(questions_list)
@@ -228,15 +221,15 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
   dbBegin(con)
   tryCatch({
     now <- as.character(Sys.time())
-    survey_id <- as.integer(resolve_survey_id(con, survey_id))
+    survey_id <- resolve_survey_id(con, survey_id)
     existing <- !is.na(survey_id)
-    old_groups <- if (existing) dbGetQuery(con, "SELECT group_id FROM question_groups WHERE survey_id = ?", list(survey_id))$group_id else integer()
-    old_questions <- if (existing) dbGetQuery(con, "SELECT question_id FROM questions WHERE survey_id = ?", list(survey_id))$question_id else integer()
+    if (!existing) survey_id <- if (nzchar(requested_id)) requested_id else new_db_id()
+    old_groups <- if (existing) dbGetQuery(con, "SELECT group_id FROM question_groups WHERE survey_id = ?", list(survey_id))$group_id else character()
+    old_questions <- if (existing) dbGetQuery(con, "SELECT question_id FROM questions WHERE survey_id = ?", list(survey_id))$question_id else character()
 
     if (!existing) {
-      dbExecute(con, "INSERT INTO surveys (password_hash, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                list(password_hash, survey_title, now, now))
-      survey_id <- db_last_id(con)
+      dbExecute(con, "INSERT INTO surveys (survey_id, password_hash, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                list(survey_id, password_hash, survey_title, now, now))
     }
 
     group_map <- setNames(character(length(group_ids)), group_ids)
@@ -247,10 +240,10 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
       if (!is.null(db_id) && as.character(db_id) %in% as.character(old_groups)) {
         group_map[[id]] <- as.character(db_id)
         dbExecute(con, "UPDATE question_groups SET title = ?, order_index = ? WHERE survey_id = ? AND group_id = ?",
-                  list(if (is.null(group$title)) paste0("設問グループ", i) else group$title, i - 1, survey_id, as.integer(db_id)))
+                  list(if (is.null(group$title)) paste0("設問グループ", i) else group$title, i - 1, survey_id, db_id))
       } else {
-        dbExecute(con, "INSERT INTO question_groups (survey_id, title, order_index) VALUES (?, ?, ?)", list(survey_id, if (is.null(group$title)) paste0("設問グループ", i) else group$title, i - 1))
-        group_map[[id]] <- db_last_id(con)
+        group_map[[id]] <- new_db_id()
+        dbExecute(con, "INSERT INTO question_groups (group_id, survey_id, title, order_index) VALUES (?, ?, ?, ?)", list(group_map[[id]], survey_id, if (is.null(group$title)) paste0("設問グループ", i) else group$title, i - 1))
       }
     }
 
@@ -260,18 +253,18 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
       q <- questions_list[[id]]
       options_json <- if (is.null(q$options) || !length(q$options)) NA_character_ else toJSON(q$options, auto_unbox = TRUE)
       settings_json <- toJSON(if (is.null(q$settings)) list() else q$settings, auto_unbox = TRUE, null = "null")
-      values <- list(as.integer(survey_id), as.integer(group_map[[as.character(q$group_id)]]), q$title, q$desc, q$type, i - 1, options_json, settings_json,
+      values <- list(new_db_id(), survey_id, group_map[[as.character(q$group_id)]], q$title, q$desc, q$type, i - 1, options_json, settings_json,
                      if (is.null(q$min)) NA_real_ else q$min,
                      if (is.null(q$max)) NA_real_ else q$max)
       db_id <- q$id
       if (!is.null(db_id) && as.character(db_id) %in% as.character(old_questions)) {
         dbExecute(con, "UPDATE questions SET survey_id = ?, group_id = ?, title = ?, description = ?, type = ?, order_index = ?,
           options_json = ?, settings_json = ?, min_value = ?, max_value = ? WHERE survey_id = ? AND question_id = ?",
-          c(values, list(survey_id, as.integer(db_id))))
+          c(values[-1], list(survey_id, db_id)))
         question_map[[id]] <- as.character(db_id)
       } else {
-        dbExecute(con, "INSERT INTO questions (survey_id, group_id, title, description, type, order_index, options_json, settings_json, min_value, max_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
-        question_map[[id]] <- db_last_id(con)
+        dbExecute(con, "INSERT INTO questions (question_id, survey_id, group_id, title, description, type, order_index, options_json, settings_json, min_value, max_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
+        question_map[[id]] <- values[[1]]
       }
     }
 
@@ -280,24 +273,26 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
       settings <- groups_list[[id]]$settings
       condition_id <- settings$visibility$question_id
       if (!is.null(condition_id) && as.character(condition_id) %in% names(question_map)) {
-        settings$visibility$question_id <- as.integer(question_map[[as.character(condition_id)]])
+        settings$visibility$question_id <- as.character(question_map[[as.character(condition_id)]])
       }
       dbExecute(con, "UPDATE question_groups SET settings_json = ? WHERE group_id = ?",
                 list(toJSON(if (is.null(settings)) list() else settings, auto_unbox = TRUE, null = "null"),
-                     as.integer(group_map[[id]])))
+                     group_map[[id]]))
     }
 
-    removed_questions <- setdiff(old_questions, as.integer(unname(question_map)))
-    for (id in removed_questions) dbExecute(con, "DELETE FROM questions WHERE question_id = ?", list(as.integer(id)))
-    removed_groups <- setdiff(old_groups, as.integer(unname(group_map)))
-    for (id in removed_groups) dbExecute(con, "DELETE FROM question_groups WHERE group_id = ?", list(as.integer(id)))
+    removed_questions <- setdiff(old_questions, unname(question_map))
+    for (id in removed_questions) dbExecute(con, "DELETE FROM questions WHERE question_id = ?", list(id))
+    removed_groups <- setdiff(old_groups, unname(group_map))
+    for (id in removed_groups) dbExecute(con, "DELETE FROM question_groups WHERE group_id = ?", list(id))
 
     if (existing) {
       dbExecute(con, "UPDATE surveys SET password_hash = ?, title = ?, updated_at = ? WHERE survey_id = ?",
                 list(password_hash, survey_title, now, survey_id))
     }
     dbCommit(con)
-    list(survey_id = survey_id, groups = group_map, questions = question_map)
+    # URLや画面には、入力されたアンケートIDを優先して返す。
+    display_id <- if (nzchar(requested_id)) requested_id else as.character(survey_id)
+    list(survey_id = display_id, database_id = as.character(survey_id), groups = group_map, questions = question_map)
   }, error = function(error) {
     dbRollback(con)
     stop(error)
@@ -305,18 +300,18 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
 })
 
 save_response <- function(survey_id, answers) with_db({
-  survey_id <- as.integer(resolve_survey_id(con, survey_id))
+  survey_id <- resolve_survey_id(con, survey_id)
   if (is.na(survey_id)) stop("アンケートが見つかりません。")
   dbBegin(con)
   tryCatch({
-    dbExecute(con, "INSERT INTO responses (survey_id, submitted_at) VALUES (?, ?)",
-              list(survey_id, as.character(Sys.time())))
-    response_id <- db_last_id(con)
+    response_id <- new_db_id()
+    dbExecute(con, "INSERT INTO responses (response_id, survey_id, submitted_at) VALUES (?, ?, ?)",
+              list(response_id, survey_id, as.character(Sys.time())))
     for (qid in names(answers)) {
       value <- answers[[qid]]
       if (length(value) > 1) value <- paste(value, collapse = ",")
-      dbExecute(con, "INSERT INTO answers (response_id, question_id, answer_text) VALUES (?, ?, ?)",
-                list(as.integer(response_id), as.integer(qid), as.character(value)))
+      dbExecute(con, "INSERT INTO answers (answer_id, response_id, question_id, answer_text) VALUES (?, ?, ?, ?)",
+                list(new_db_id(), response_id, as.character(qid), as.character(value)))
     }
     dbCommit(con)
     response_id
@@ -327,13 +322,13 @@ save_response <- function(survey_id, answers) with_db({
 })
 
 load_response_count <- function(survey_id) with_db({
-  survey_id <- as.integer(resolve_survey_id(con, survey_id))
+  survey_id <- resolve_survey_id(con, survey_id)
   if (is.na(survey_id)) return(0L)
   as.integer(dbGetQuery(con, "SELECT COUNT(*) AS count FROM responses WHERE survey_id = ?", list(survey_id))$count[1])
 })
 
 load_answers <- function(survey_id) with_db({
-  survey_id <- as.integer(resolve_survey_id(con, survey_id))
+  survey_id <- resolve_survey_id(con, survey_id)
   if (is.na(survey_id)) return(data.frame(response_id = character(), submitted_at = character(), question_id = character(), answer_text = character()))
   answers <- dbGetQuery(con, "
     SELECT r.response_id, r.submitted_at, a.question_id, a.answer_text
