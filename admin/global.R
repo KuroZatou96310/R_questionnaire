@@ -80,6 +80,11 @@ question_options_ui <- function(question_id, question) {
                   selected = if (display %in% c("radio", "horizontal", "dropdown", "slider")) display else "radio")
     ),
     conditionalPanel(
+      condition = sprintf("input['question_edit_type_%s'] == 'single_numeric' && input['%s_numeric'] == 'horizontal'", question_id, display_id),
+      textInput(paste0("question_min_label_", question_id), "最小値側の説明", value = settings$min_label),
+      textInput(paste0("question_max_label_", question_id), "最大値側の説明", value = settings$max_label)
+    ),
+    conditionalPanel(
       condition = sprintf("input['question_edit_type_%s'] == 'single_text'", question_id),
       selectInput(paste0(display_id, "_text"), "表示方法",
                   choices = c("縦並び" = "radio", "横並び" = "horizontal", "プルダウン" = "dropdown"),
@@ -162,6 +167,7 @@ question_group_settings_ui <- function(group_id, group, previous_questions) {
   }
 
   tagList(
+    textInput(paste0("group_title_", group_id), "グループ名", value = group$title),
     checkboxInput(paste0("group_page_", group_id), "このグループをページとして表示", isTRUE(settings$page)),
     checkboxInput(randomize_questions_id, "グループ内の設問をランダム表示", isTRUE(settings$randomize_questions)),
     checkboxInput(has_visibility_id, "回答条件でこのグループを表示", !is.null(condition)),
