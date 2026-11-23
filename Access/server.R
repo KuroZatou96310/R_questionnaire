@@ -18,7 +18,7 @@ shinyServer(function(input, output, session) {
     origin <- paste0(protocol, "://", hostname, if (nzchar(port) && !default_port) paste0(":", port) else "")
 
     access_path <- session$clientData$url_pathname
-    answer_path <- sub("/Access/?$", "/answer/", access_path)
+    answer_path <- sub("/access/?$", "/answer/", access_path)
     if (identical(answer_path, access_path)) {
       prefix <- sub("/[^/]*$", "", access_path)
       answer_path <- paste0(prefix, "/answer/")
@@ -57,3 +57,4 @@ shinyServer(function(input, output, session) {
     contentType = "image/svg+xml"
   )
 })
+

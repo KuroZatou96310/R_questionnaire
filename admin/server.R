@@ -201,7 +201,7 @@ shinyServer(function(input, output, session) {
       paste0(origin, app_prefix, "/", path, "/", if (with_id) paste0("?id=", utils::URLencode(survey_id, reserved = TRUE)) else "")
     }
     answer_url <- app_url("answer", with_id = TRUE)
-    qr_url <- app_url("Access", with_id = TRUE)
+    qr_url <- app_url("access", with_id = TRUE)
     admin_url <- app_url("admin", with_id = TRUE)
     analysis_url <- app_url("analytics", with_id = TRUE)
 
@@ -445,7 +445,7 @@ shinyServer(function(input, output, session) {
 
     groups <- capture_questions()
     group_id <- next_editor_key("group")
-    group <- list(id = NULL, title = next_group_title(groups), settings = list(page = FALSE), questions = list())
+    group <- list(id = NULL, title = "", settings = list(page = TRUE), questions = list())
     for (template in preset$questions) {
       template$id <- NULL
       template$settings <- modifyList(if (is.null(template$settings)) list() else template$settings,
@@ -461,7 +461,7 @@ shinyServer(function(input, output, session) {
     capture_questions()
     groups <- store$groups
     group_id <- next_editor_key("group")
-    groups[[group_id]] <- list(id = NULL, title = next_group_title(groups), settings = list(page = FALSE))
+    groups[[group_id]] <- list(id = NULL, title = "", settings = list(page = TRUE))
     store$groups <- groups
   })
 
@@ -614,8 +614,8 @@ shinyServer(function(input, output, session) {
     for (group_id in setdiff(group_ids, names(groups))) {
       groups[[group_id]] <- list(
         id = NULL,
-        title = paste0("設問グループ", length(groups) + 1),
-        settings = list(page = FALSE)
+        title = "",
+        settings = list(page = TRUE)
       )
     }
     groups <- groups[group_ids]
@@ -637,7 +637,7 @@ shinyServer(function(input, output, session) {
     group_order <- names(groups)
     if (!length(groups)) {
       group_id <- next_editor_key("group")
-      groups[[group_id]] <- list(id = NULL, title = next_group_title(groups), settings = list(page = FALSE))
+      groups[[group_id]] <- list(id = NULL, title = "", settings = list(page = TRUE))
     }
     group_order <- names(groups)
     qid <- next_editor_key("question")
@@ -696,7 +696,10 @@ shinyServer(function(input, output, session) {
     tagList(
       lapply(names(store$groups), function(group_id) {
         tagList(
-          h3(store$groups[[group_id]]$title),
+          if (!is.null(store$groups[[group_id]]$title) && !is.na(store$groups[[group_id]]$title[1]) &&
+              nzchar(trimws(store$groups[[group_id]]$title[1]))) {
+            h3(store$groups[[group_id]]$title)
+          },
           lapply(names(store$groups[[group_id]]$questions), function(id) {
             q <- store$groups[[group_id]]$questions[[id]]
             label <- tags$div(
@@ -757,3 +760,4 @@ shinyServer(function(input, output, session) {
   })
 
 })
+
