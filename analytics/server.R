@@ -953,14 +953,60 @@ shinyServer(function(input, output, session){
   #-------------------------
   # CSVダウンロード
   #-------------------------
+  output$download_csv_bundle <- downloadHandler(
+    filename = function() paste0("アンケート情報_", input$survey_id, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip"),
+    content = function(file) {
+      req(survey_questions(), survey_answers())
+      survey <- load_survey_info(input$survey_id)
+      questions <- survey_questions()
+      answers <- survey_answers()
+      stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+      work_dir <- tempfile("csv_bundle_")
+      dir.create(work_dir, recursive = TRUE)
+      on.exit(unlink(work_dir, recursive = TRUE, force = TRUE), add = TRUE)
+      empty_text <- function(value) if (length(value) == 0 || is.null(value) || is.na(value)) "" else enc2utf8(as.character(value))
+
+      question_ids <- names(questions)
+      question_titles <- vapply(questions, function(q) {
+        value <- q$title
+        if (is.null(value) || !length(value) || is.na(value[[1]])) "" else enc2utf8(as.character(value[[1]]))
+      }, character(1))
+      question_titles <- make.unique(ifelse(nzchar(question_titles), question_titles, paste0("設問_", seq_along(question_titles))))
+      response_ids <- unique(as.character(answers$response_id))
+      response_csv <- data.frame(回答ID = response_ids, 回答日時 = vapply(response_ids, function(id) {
+        x <- answers$submitted_at[answers$response_id == id]; if (length(x)) as.character(x[[1]]) else ""
+      }, character(1)), check.names = FALSE, stringsAsFactors = FALSE)
+      for (i in seq_along(question_ids)) {
+        qid <- question_ids[[i]]
+        response_csv[[question_titles[[i]]]] <- vapply(response_ids, function(rid) {
+          x <- answers$answer_text[answers$response_id == rid & answers$question_id == qid]
+          if (length(x)) paste(as.character(x), collapse = ",") else ""
+        }, character(1))
+      }
+      question_csv <- lapply(questions, function(question) data.frame(
+        アンケートID = empty_text(survey$id), アンケートタイトル = empty_text(survey$title), アンケート説明 = empty_text(survey$description),
+        設問ID = empty_text(question$id), 設問 = empty_text(question$title), 設問説明 = empty_text(question$desc), 種類 = empty_text(question$type),
+        選択肢 = if (is.null(question$options)) "" else paste(enc2utf8(as.character(unlist(question$options, use.names = FALSE))), collapse = " | "),
+        最小値 = empty_text(question$min), 最大値 = empty_text(question$max), check.names = FALSE, stringsAsFactors = FALSE
+      ))
+      question_csv <- if (length(question_csv)) do.call(rbind, question_csv) else data.frame()
+      answer_path <- file.path(work_dir, paste0("回答情報＿", input$survey_id, "_", stamp, ".csv"))
+      question_path <- file.path(work_dir, paste0("設問情報＿", input$survey_id, "_", stamp, ".csv"))
+      write_bom_csv <- function(data, path) {
+        con <- file(path, open = "wb"); on.exit(close(con), add = TRUE)
+        writeBin(charToRaw("\ufeff"), con); write.csv(data, con, row.names = FALSE, fileEncoding = "UTF-8", na = "")
+      }
+      write_bom_csv(response_csv, answer_path)
+      write_bom_csv(question_csv, question_path)
+      utils::zip(zipfile = file, files = c(answer_path, question_path), flags = "-j")
+    }
+  )
+
   output$download_csv <- downloadHandler(
 
     filename=function(){
 
-      paste0(
-        input$survey_id,
-        "_answers.csv"
-      )
+      paste0("回答情報＿", input$survey_id, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
 
     },
 
@@ -971,48 +1017,28 @@ shinyServer(function(input, output, session){
       survey <- load_survey_info(input$survey_id)
       questions <- survey_questions()
       answers <- survey_answers()
-
-      empty_text <- function(value) {
-        if (length(value) == 0 || is.na(value)) "" else enc2utf8(as.character(value))
-      }
-
-      exported <- lapply(seq_len(nrow(answers)), function(i) {
-
-        answer <- answers[i, , drop = FALSE]
-        question <- questions[[answer$question_id]]
-
-        choices <- if (is.null(question$options)) {
-          ""
-        } else {
-          paste(enc2utf8(as.character(unlist(question$options, use.names = FALSE))), collapse = " | ")
-        }
-
-        data.frame(
-          "アンケートID" = survey$id,
-          "アンケートタイトル" = empty_text(survey$title),
-          "アンケート説明" = empty_text(survey$description),
-          "設問ID" = empty_text(question$id),
-          "設問" = empty_text(question$title),
-          "設問説明" = empty_text(question$desc),
-          "種類" = empty_text(question$type),
-          "選択肢" = choices,
-          "最小値" = empty_text(question$min),
-          "最大値" = empty_text(question$max),
-          "回答ID" = empty_text(answer$response_id),
-          "回答日時" = empty_text(answer$submitted_at),
-          "回答" = empty_text(answer$answer_text),
-          check.names = FALSE,
-          stringsAsFactors = FALSE
-        )
-
-      })
-
-      exported <- if (length(exported)) do.call(rbind, exported) else data.frame(
-        "アンケートID" = character(), "アンケートタイトル" = character(), "アンケート説明" = character(),
-        "設問ID" = character(), "設問" = character(), "設問説明" = character(), "種類" = character(),
-        "選択肢" = character(), "最小値" = character(), "最大値" = character(), "回答ID" = character(),
-        "回答日時" = character(), "回答" = character(), check.names = FALSE
+      question_ids <- names(questions)
+      question_titles <- vapply(questions, function(q) {
+        value <- q$title
+        if (is.null(value) || !length(value) || is.na(value[[1]])) "" else enc2utf8(as.character(value[[1]]))
+      }, character(1))
+      question_titles <- make.unique(ifelse(nzchar(question_titles), question_titles, paste0("設問_", seq_along(question_titles))))
+      response_ids <- unique(as.character(answers$response_id))
+      exported <- data.frame(
+        回答ID = response_ids,
+        回答日時 = vapply(response_ids, function(id) {
+          x <- answers$submitted_at[answers$response_id == id]
+          if (length(x)) as.character(x[[1]]) else ""
+        }, character(1)), check.names = FALSE, stringsAsFactors = FALSE
       )
+      for (i in seq_along(question_ids)) {
+        qid <- question_ids[[i]]
+        values <- vapply(response_ids, function(rid) {
+          x <- answers$answer_text[answers$response_id == rid & answers$question_id == qid]
+          if (length(x)) paste(as.character(x), collapse = ",") else ""
+        }, character(1))
+        exported[[question_titles[[i]]]] <- values
+      }
 
       con <- file(file, open = "wb")
       on.exit(close(con), add = TRUE)
@@ -1023,6 +1049,25 @@ shinyServer(function(input, output, session){
 
     }
 
+  )
+
+  output$download_questions_csv <- downloadHandler(
+    filename = function() paste0("設問情報＿", input$survey_id, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+    content = function(file) {
+      req(survey_questions())
+      survey <- load_survey_info(input$survey_id)
+      empty_text <- function(value) if (length(value) == 0 || is.null(value) || is.na(value)) "" else enc2utf8(as.character(value))
+      exported <- lapply(survey_questions(), function(question) data.frame(
+        アンケートID = empty_text(survey$id), アンケートタイトル = empty_text(survey$title), アンケート説明 = empty_text(survey$description),
+        設問ID = empty_text(question$id), 設問 = empty_text(question$title), 設問説明 = empty_text(question$desc), 種類 = empty_text(question$type),
+        選択肢 = if (is.null(question$options)) "" else paste(enc2utf8(as.character(unlist(question$options, use.names = FALSE))), collapse = " | "),
+        最小値 = empty_text(question$min), 最大値 = empty_text(question$max), check.names = FALSE, stringsAsFactors = FALSE
+      ))
+      exported <- if (length(exported)) do.call(rbind, exported) else data.frame()
+      con <- file(file, open = "wb"); on.exit(close(con), add = TRUE)
+      writeBin(charToRaw("\ufeff"), con)
+      write.csv(exported, con, row.names = FALSE, fileEncoding = "UTF-8", na = "")
+    }
   )
 
 })

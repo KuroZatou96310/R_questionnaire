@@ -7,7 +7,9 @@ shinyUI(
 
   fluidPage(
 
-    tags$head(tags$title("アンケート分析画面")),
+    tags$head(
+      tags$title("アンケート分析画面"),
+    ),
 
     titlePanel("アンケート分析"),
 
@@ -49,9 +51,11 @@ shinyUI(
 
         hr(),
 
-        downloadButton(
-          "download_csv",
-          "CSVダウンロード"
+        downloadButton("download_csv_bundle", "CSVを一括ダウンロード"),
+        tags$div(
+          style = "display:none;",
+          downloadButton("download_csv", "回答データCSV"),
+          downloadButton("download_questions_csv", "設問・設定CSV")
         ),
 
         hr(),
