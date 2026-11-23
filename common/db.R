@@ -39,7 +39,7 @@ migrate_items_schema <- function(con) {
     for (i in seq_len(nrow(surveys))) {
       row <- surveys[i, ]
       dbExecute(con, "INSERT INTO surveys (survey_id,legacy_id,password_hash,title,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
-                as.list(row[c("survey_id", "legacy_id", "password_hash", "title", "description", "created_at", "updated_at")]))
+                unname(as.list(row[c("survey_id", "legacy_id", "password_hash", "title", "description", "created_at", "updated_at")])))
     }
     groups <- items[items$kind == "group", , drop = FALSE]
     for (i in seq_len(nrow(groups))) {
@@ -80,10 +80,6 @@ init_db <- function() {
   dbExecute(con, "PRAGMA foreign_keys = ON")
 
   tables <- dbListTables(con)
-  if (!"surveys" %in% tables) {
-    create_app_schema(con)
-    return(invisible(TRUE))
-  }
   if ("survey_items" %in% tables) {
     migrate_items_schema(con)
     return(invisible(TRUE))
@@ -92,22 +88,6 @@ init_db <- function() {
     create_app_schema(con)
     return(invisible(TRUE))
   }
-  if (!("legacy_id" %in% dbGetQuery(con, "PRAGMA table_info(surveys)")$name)) {
-    dbExecute(con, "ALTER TABLE surveys ADD COLUMN legacy_id TEXT")
-  }
-  question_columns <- dbGetQuery(con, "PRAGMA table_info(questions)")$name
-  if (!("group_id" %in% question_columns)) {
-    try(dbExecute(con, "ALTER TABLE questions ADD COLUMN group_id TEXT"), silent = TRUE)
-  }
-  if (!("settings_json" %in% question_columns)) {
-    try(dbExecute(con, "ALTER TABLE questions ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'"), silent = TRUE)
-  }
-  question_types <- c(min_value = "REAL", max_value = "REAL")
-  for (column in names(question_types)) {
-    if (!(column %in% question_columns)) try(dbExecute(con, paste("ALTER TABLE questions ADD COLUMN", column, question_types[[column]])), silent = TRUE)
-  }
-  group_columns <- dbGetQuery(con, "PRAGMA table_info(question_groups)")$name
-  if (!("settings_json" %in% group_columns)) dbExecute(con, "ALTER TABLE question_groups ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'")
   required <- list(surveys = c("survey_id", "legacy_id", "password_hash"),
     question_groups = c("group_id", "survey_id", "title", "order_index", "settings_json"),
     questions = c("question_id", "survey_id", "group_id", "settings_json", "min_value", "max_value"),
@@ -115,14 +95,14 @@ init_db <- function() {
   has_columns <- all(names(required) %in% tables) && all(vapply(names(required), function(table) {
     all(required[[table]] %in% dbGetQuery(con, paste0("PRAGMA table_info(", table, ")"))$name)
   }, logical(1)))
+  if (!has_columns) stop("未対応のDB構造です。データを変更せずに停止しました。")
   integer_keys <- c(surveys = "survey_id", question_groups = "group_id", questions = "question_id", responses = "response_id", answers = "answer_id")
   has_integer_keys <- all(vapply(names(integer_keys), function(table) {
     info <- dbGetQuery(con, paste0("PRAGMA table_info(", table, ")"))
     row <- info[info$name == integer_keys[[table]], ]
     nrow(row) == 1 && toupper(row$type[1]) == "INTEGER" && row$pk[1] == 1
   }, logical(1)))
-  if (has_columns && has_integer_keys && !"survey_items" %in% tables) return(invisible(TRUE))
-  if (!has_columns || !has_integer_keys) stop("未対応のDB構造です。データを変更せずに停止しました。")
+  if (!has_integer_keys) stop("未対応のDB構造です。データを変更せずに停止しました。")
   invisible(TRUE)
 }
 
