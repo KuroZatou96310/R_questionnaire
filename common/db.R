@@ -234,9 +234,9 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
     survey_id <- resolve_survey_id(con, survey_id)
     existing <- !is.na(survey_id)
     if (!existing) {
-      if (nzchar(requested_id)) stop("アンケートが見つかりません。")
-      dbExecute(con, "INSERT INTO surveys (legacy_id, password_hash, title, created_at, updated_at) VALUES (NULL, ?, ?, ?, ?)",
-                list(password_hash, survey_title, now, now))
+      if (!nzchar(requested_id)) stop("アンケートIDを入力してください。")
+      dbExecute(con, "INSERT INTO surveys (legacy_id, password_hash, title, created_at, updated_at, public_id) VALUES (?, ?, ?, ?, ?, ?)",
+                list(requested_id, password_hash, survey_title, now, now, requested_id))
       survey_id <- last_insert_id(con)
     }
     old_groups <- as.character(dbGetQuery(con, "SELECT group_id FROM question_groups WHERE survey_id = ?", list(survey_id))$group_id)

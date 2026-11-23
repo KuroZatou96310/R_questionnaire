@@ -35,6 +35,8 @@ shinyUI(
           style = "width:100%;"
         ),
 
+        textOutput("loaded_survey_title"),
+
         hr(),
 
         h4("回答数"),
