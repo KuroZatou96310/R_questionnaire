@@ -1,5 +1,7 @@
 /* Survey group and question layout */
 .group-board { display:flex; flex-direction:column; gap:14px; }
+#load_survey, #new_survey { width:100%; margin-bottom:8px; }
+#return_home { width:auto; margin:0 0 12px; }
 .group-card { position:relative; border:0; background:transparent; }
 .group-card.multi-question-group { padding:8px; border:1px solid #cbd5e1; border-radius:10px; background:#f8fafc; }
 .question-list { position:relative; display:flex; min-height:52px; padding:4px 0; flex-direction:column; gap:0; }

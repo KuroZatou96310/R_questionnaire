@@ -2,11 +2,10 @@ library(jsonlite)
 library(digest)
 library(DBI)
 library(RSQLite)
-library(uuid)
 
 DATA_DIR <- Sys.getenv("QUESTIONNAIRE_DATA_DIR", "/srv/shiny-server/data")
 DB_FILE <- file.path(DATA_DIR, "questionnaire.db")
-new_db_id <- function() UUIDgenerate()
+last_insert_id <- function(con) as.integer(dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1])
 
 flatten_survey_groups <- function(groups) {
   questions <- list()
@@ -19,12 +18,20 @@ flatten_survey_groups <- function(groups) {
 }
 
 create_app_schema <- function(con) {
-  dbExecute(con, "CREATE TABLE surveys (survey_id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, title TEXT, description TEXT, created_at TEXT, updated_at TEXT)")
-  dbExecute(con, "CREATE TABLE question_groups (group_id TEXT PRIMARY KEY, survey_id TEXT NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, title TEXT NOT NULL, order_index INTEGER NOT NULL, settings_json TEXT NOT NULL DEFAULT '{}')")
-  dbExecute(con, "CREATE TABLE questions (question_id TEXT PRIMARY KEY, survey_id TEXT NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, group_id TEXT NOT NULL REFERENCES question_groups(group_id) ON DELETE CASCADE, title TEXT, description TEXT, type TEXT, order_index INTEGER NOT NULL, options_json TEXT, settings_json TEXT NOT NULL DEFAULT '{}', min_value REAL, max_value REAL)")
+  dbExecute(con, "CREATE TABLE surveys (survey_id INTEGER PRIMARY KEY, legacy_id TEXT UNIQUE, password_hash TEXT NOT NULL, title TEXT, description TEXT, created_at TEXT, updated_at TEXT, public_id TEXT)")
+  dbExecute(con, "CREATE TABLE question_groups (group_id INTEGER PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, title TEXT NOT NULL, order_index INTEGER NOT NULL, settings_json TEXT NOT NULL DEFAULT '{}')")
+  dbExecute(con, "CREATE TABLE questions (question_id INTEGER PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, group_id INTEGER NOT NULL REFERENCES question_groups(group_id) ON DELETE CASCADE, title TEXT, description TEXT, type TEXT, order_index INTEGER NOT NULL, options_json TEXT, settings_json TEXT NOT NULL DEFAULT '{}', min_value REAL, max_value REAL)")
   dbExecute(con, "CREATE INDEX questions_group_order ON questions(group_id, order_index)")
-  dbExecute(con, "CREATE TABLE responses (response_id TEXT PRIMARY KEY, survey_id TEXT NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, submitted_at TEXT)")
-  dbExecute(con, "CREATE TABLE answers (answer_id TEXT PRIMARY KEY,response_id TEXT NOT NULL REFERENCES responses(response_id) ON DELETE CASCADE,question_id TEXT NOT NULL REFERENCES questions(question_id) ON DELETE CASCADE,answer_text TEXT)")
+  dbExecute(con, "CREATE TABLE responses (response_id INTEGER PRIMARY KEY, survey_id INTEGER NOT NULL REFERENCES surveys(survey_id) ON DELETE CASCADE, submitted_at TEXT)")
+  dbExecute(con, "CREATE TABLE answers (answer_id INTEGER PRIMARY KEY,response_id INTEGER NOT NULL REFERENCES responses(response_id) ON DELETE CASCADE,question_id INTEGER NOT NULL REFERENCES questions(question_id) ON DELETE CASCADE,answer_text TEXT)")
+  ensure_public_id_schema(con)
+}
+
+ensure_public_id_schema <- function(con) {
+  if (!"public_id" %in% dbListFields(con, "surveys")) dbExecute(con, "ALTER TABLE surveys ADD COLUMN public_id TEXT")
+  dbExecute(con, "UPDATE surveys SET public_id = lower(hex(randomblob(16))) WHERE public_id IS NULL OR public_id = ''")
+  dbExecute(con, "CREATE UNIQUE INDEX IF NOT EXISTS surveys_public_id ON surveys(public_id)")
+  dbExecute(con, "CREATE TRIGGER IF NOT EXISTS surveys_public_id_default AFTER INSERT ON surveys WHEN NEW.public_id IS NULL OR NEW.public_id = '' BEGIN UPDATE surveys SET public_id = lower(hex(randomblob(16))) WHERE survey_id = NEW.survey_id; END")
 }
 
 migrate_items_schema <- function(con) {
@@ -97,6 +104,7 @@ init_db <- function() {
     all(required[[table]] %in% dbGetQuery(con, paste0("PRAGMA table_info(", table, ")"))$name)
   }, logical(1)))
   if (!has_columns) stop("未対応のDB構造です。データを変更せずに停止しました。")
+  ensure_public_id_schema(con)
   invisible(TRUE)
 }
 
@@ -126,28 +134,30 @@ with_db <- function(code) {
 hash_pw <- function(pw) digest(pw, algo = "sha256", serialize = FALSE)
 
 resolve_survey_id <- function(con, id) {
-  if (is.null(id) || !length(id) || is.na(id[1]) || !nzchar(as.character(id[1]))) return(NA_character_)
-  row <- dbGetQuery(con, "SELECT survey_id FROM surveys WHERE survey_id = ? LIMIT 1", list(as.character(id[1])))
-  if (nrow(row)) as.character(row$survey_id[1]) else NA_character_
+  if (is.null(id) || !length(id) || is.na(id[1]) || !nzchar(as.character(id[1]))) return(NA_integer_)
+  key <- as.character(id[1])
+  row <- dbGetQuery(con, "SELECT survey_id FROM surveys WHERE public_id = ? OR legacy_id = ? OR CAST(survey_id AS TEXT) = ? LIMIT 1",
+                    list(key, key, key))
+  if (nrow(row)) as.integer(row$survey_id[1]) else NA_integer_
 }
 
 load_db <- function() with_db({
-  surveys <- dbGetQuery(con, "SELECT survey_id, password_hash FROM surveys")
+  surveys <- dbGetQuery(con, "SELECT survey_id, legacy_id, public_id, password_hash FROM surveys")
   if (nrow(surveys) == 0) return(list())
   result <- list()
-  for (i in seq_len(nrow(surveys))) result[[as.character(surveys$survey_id[i])]] <- list(password = surveys$password_hash[i])
+  for (i in seq_len(nrow(surveys))) for (id in unique(na.omit(c(surveys$public_id[i], surveys$legacy_id[i], as.character(surveys$survey_id[i]))))) {
+    if (nzchar(id)) result[[id]] <- list(password = surveys$password_hash[i])
+  }
   result
 })
 
 load_survey_info <- function(survey_id) with_db({
   survey_id <- resolve_survey_id(con, survey_id)
   if (is.na(survey_id)) return(list(id = "", title = "", description = ""))
-  survey <- dbGetQuery(con, "
-    SELECT survey_id, title, description FROM surveys WHERE survey_id = ?
-  ", params = list(survey_id))
+  survey <- dbGetQuery(con, "SELECT survey_id, public_id, title, description FROM surveys WHERE survey_id = ?", list(survey_id))
   if (nrow(survey) == 0) return(list(id = survey_id, title = "", description = ""))
   list(
-    id = enc2utf8(as.character(survey$survey_id[1])),
+    id = enc2utf8(if (!is.na(survey$public_id[1]) && nzchar(survey$public_id[1])) as.character(survey$public_id[1]) else as.character(survey$survey_id[1])),
     title = enc2utf8(as.character(survey$title[1])),
     description = enc2utf8(as.character(survey$description[1]))
   )
@@ -223,14 +233,14 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
     now <- as.character(Sys.time())
     survey_id <- resolve_survey_id(con, survey_id)
     existing <- !is.na(survey_id)
-    if (!existing) survey_id <- if (nzchar(requested_id)) requested_id else new_db_id()
-    old_groups <- if (existing) dbGetQuery(con, "SELECT group_id FROM question_groups WHERE survey_id = ?", list(survey_id))$group_id else character()
-    old_questions <- if (existing) dbGetQuery(con, "SELECT question_id FROM questions WHERE survey_id = ?", list(survey_id))$question_id else character()
-
     if (!existing) {
-      dbExecute(con, "INSERT INTO surveys (survey_id, password_hash, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                list(survey_id, password_hash, survey_title, now, now))
+      if (nzchar(requested_id)) stop("アンケートが見つかりません。")
+      dbExecute(con, "INSERT INTO surveys (legacy_id, password_hash, title, created_at, updated_at) VALUES (NULL, ?, ?, ?, ?)",
+                list(password_hash, survey_title, now, now))
+      survey_id <- last_insert_id(con)
     }
+    old_groups <- as.character(dbGetQuery(con, "SELECT group_id FROM question_groups WHERE survey_id = ?", list(survey_id))$group_id)
+    old_questions <- as.character(dbGetQuery(con, "SELECT question_id FROM questions WHERE survey_id = ?", list(survey_id))$question_id)
 
     group_map <- setNames(character(length(group_ids)), group_ids)
     for (i in seq_along(group_ids)) {
@@ -242,8 +252,8 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
         dbExecute(con, "UPDATE question_groups SET title = ?, order_index = ? WHERE survey_id = ? AND group_id = ?",
                   list(if (is.null(group$title)) paste0("設問グループ", i) else group$title, i - 1, survey_id, db_id))
       } else {
-        group_map[[id]] <- new_db_id()
-        dbExecute(con, "INSERT INTO question_groups (group_id, survey_id, title, order_index) VALUES (?, ?, ?, ?)", list(group_map[[id]], survey_id, if (is.null(group$title)) paste0("設問グループ", i) else group$title, i - 1))
+        dbExecute(con, "INSERT INTO question_groups (survey_id, title, order_index) VALUES (?, ?, ?)", list(survey_id, if (is.null(group$title)) paste0("設問グループ", i) else group$title, i - 1))
+        group_map[[id]] <- as.character(last_insert_id(con))
       }
     }
 
@@ -253,18 +263,18 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
       q <- questions_list[[id]]
       options_json <- if (is.null(q$options) || !length(q$options)) NA_character_ else toJSON(q$options, auto_unbox = TRUE)
       settings_json <- toJSON(if (is.null(q$settings)) list() else q$settings, auto_unbox = TRUE, null = "null")
-      values <- list(new_db_id(), survey_id, group_map[[as.character(q$group_id)]], q$title, q$desc, q$type, i - 1, options_json, settings_json,
+      values <- list(survey_id, as.integer(group_map[[as.character(q$group_id)]]), q$title, q$desc, q$type, i - 1, options_json, settings_json,
                      if (is.null(q$min)) NA_real_ else q$min,
                      if (is.null(q$max)) NA_real_ else q$max)
       db_id <- q$id
       if (!is.null(db_id) && as.character(db_id) %in% as.character(old_questions)) {
         dbExecute(con, "UPDATE questions SET survey_id = ?, group_id = ?, title = ?, description = ?, type = ?, order_index = ?,
           options_json = ?, settings_json = ?, min_value = ?, max_value = ? WHERE survey_id = ? AND question_id = ?",
-          c(values[-1], list(survey_id, db_id)))
+          c(values, list(survey_id, as.integer(db_id))))
         question_map[[id]] <- as.character(db_id)
       } else {
-        dbExecute(con, "INSERT INTO questions (question_id, survey_id, group_id, title, description, type, order_index, options_json, settings_json, min_value, max_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
-        question_map[[id]] <- values[[1]]
+        dbExecute(con, "INSERT INTO questions (survey_id, group_id, title, description, type, order_index, options_json, settings_json, min_value, max_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
+        question_map[[id]] <- as.character(last_insert_id(con))
       }
     }
 
@@ -292,7 +302,8 @@ save_db <- function(survey_id = NULL, password_hash, groups_list, survey_title =
     dbCommit(con)
     # URLや画面には、入力されたアンケートIDを優先して返す。
     display_id <- if (nzchar(requested_id)) requested_id else as.character(survey_id)
-    list(survey_id = display_id, database_id = as.character(survey_id), groups = group_map, questions = question_map)
+    public_id <- dbGetQuery(con, "SELECT public_id FROM surveys WHERE survey_id = ?", list(survey_id))$public_id[1]
+    list(survey_id = as.character(public_id), database_id = as.character(survey_id), groups = group_map, questions = question_map)
   }, error = function(error) {
     dbRollback(con)
     stop(error)
@@ -304,14 +315,14 @@ save_response <- function(survey_id, answers) with_db({
   if (is.na(survey_id)) stop("アンケートが見つかりません。")
   dbBegin(con)
   tryCatch({
-    response_id <- new_db_id()
-    dbExecute(con, "INSERT INTO responses (response_id, survey_id, submitted_at) VALUES (?, ?, ?)",
-              list(response_id, survey_id, as.character(Sys.time())))
+    dbExecute(con, "INSERT INTO responses (survey_id, submitted_at) VALUES (?, ?)",
+              list(survey_id, as.character(Sys.time())))
+    response_id <- last_insert_id(con)
     for (qid in names(answers)) {
       value <- answers[[qid]]
       if (length(value) > 1) value <- paste(value, collapse = ",")
-      dbExecute(con, "INSERT INTO answers (answer_id, response_id, question_id, answer_text) VALUES (?, ?, ?, ?)",
-                list(new_db_id(), response_id, as.character(qid), as.character(value)))
+      dbExecute(con, "INSERT INTO answers (response_id, question_id, answer_text) VALUES (?, ?, ?)",
+                list(response_id, as.integer(qid), as.character(value)))
     }
     dbCommit(con)
     response_id

@@ -113,9 +113,9 @@ shinyServer(function(input, output, session) {
   current_id <- reactiveVal(NULL)
   editing_question_options <- reactiveVal(NULL)
   active_group_settings <- reactiveVal(NULL)
-  generate_survey_id <- function() {
-    paste0(sample(c(letters, LETTERS, 0:9), 16, replace = TRUE), collapse = "")
-  }
+  editor_mode <- reactiveVal(FALSE)
+  home_survey_id <- reactiveVal("")
+  survey_title_initial <- reactiveVal("")
   next_editor_key <- local({
     key <- 0L
     function(kind) { key <<- key + 1L; paste0("new_", kind, "_", key) }
@@ -124,11 +124,62 @@ shinyServer(function(input, output, session) {
   observeEvent(getQueryString(), {
     survey_id <- getQueryString()$id
     if (!is.null(survey_id) && length(survey_id) && nzchar(trimws(survey_id))) {
-      updateTextInput(session, "survey_id", value = trimws(survey_id))
-    } else {
-      updateTextInput(session, "survey_id", value = generate_survey_id())
+      home_survey_id(trimws(survey_id))
     }
   }, ignoreInit = FALSE)
+
+  output$survey_id_ui <- renderUI({
+    if (editor_mode()) tagList(
+      actionButton("return_home", "ホームに戻る", class = "btn-default"),
+      tags$div(class = "form-group", style = "margin-top:14px;",
+        tags$label("編集中のアンケートID"),
+        if (is.null(current_id())) {
+          tags$input(type = "text", class = "form-control", value = "保存時に自動生成", readonly = "readonly")
+        } else {
+          tags$div(style = "display:flex; gap:6px;",
+            tags$input(id = "editing_survey_id", type = "text", class = "form-control",
+                       value = current_id(), readonly = "readonly"),
+            tags$button(type = "button", class = "btn btn-default",
+                        onclick = "navigator.clipboard.writeText(document.getElementById('editing_survey_id').value)",
+                        "コピー")
+          )
+        }
+      )
+    ) else textInput("survey_id", "読み込むアンケートID", value = home_survey_id())
+  })
+
+  output$survey_actions_ui <- renderUI({
+    if (editor_mode()) return(NULL)
+    tagList(actionButton("load_survey", "読み込む", width = "100%"),
+            actionButton("new_survey", "新規作成", width = "100%"))
+  })
+
+  output$survey_editor_controls_ui <- renderUI({
+    if (!editor_mode()) return(NULL)
+    tagList(
+      textInput("survey_title", "アンケート名", value = survey_title_initial(), placeholder = "例：新UIの使いやすさアンケート"),
+      hr(), h4("標準化プリセット"),
+      selectInput("preset_name", "プリセットを選択", choices = c(
+        "選択してください" = "", "SUS（システムの使いやすさ）" = "SUS",
+        "UMUX-Lite（使いやすさ・有用性）" = "UMUX-Lite", "UEQ（製品・サービスのユーザー体験）" = "UEQ",
+        "UEQ-S（ユーザー体験の短縮版）" = "UEQ-S", "NASA-TLX（作業負荷）" = "NASA-TLX",
+        "TAM（技術受容・導入意向）" = "TAM", "GEQ（ゲーム・体験の評価）" = "GEQ",
+        "IMI（活動への内発的動機づけ）" = "IMI"
+      )),
+      actionButton("add_preset", "プリセットを設問に追加"),
+      helpText("選択した質問群を現在の設問一覧の末尾へ追加します。"), hr(),
+      actionButton("save_survey", "アンケートを保存", style = "color:white;background:#0072B2;width:100%;font-weight:bold;"),
+      uiOutput("access_link_ui")
+    )
+  })
+
+  output$admin_content_ui <- renderUI({
+    if (!editor_mode()) return(NULL)
+    tabsetPanel(
+      tabPanel("設問一覧", uiOutput("question_list_ui")),
+      tabPanel("回答画面プレビュー", uiOutput("answer_preview_ui"))
+    )
+  })
 
   output$access_link_ui <- renderUI({
     survey_id <- current_id()
@@ -207,32 +258,55 @@ shinyServer(function(input, output, session) {
     editing_question_options(NULL)
   })
 
+  reset_question_type <- function(question, type) {
+    required <- if (is.null(question$settings$required)) TRUE else isTRUE(question$settings$required)
+    question$type <- type
+    question$options <- NULL
+    question$min <- question$max <- NULL
+    question$settings <- list(required = required)
+    if (type %in% c("single_numeric", "single_text", "multiple")) {
+      question$settings$display <- "radio"
+      question$settings$randomize_choices <- FALSE
+    }
+    if (type == "text") question$settings$long_text <- FALSE
+    if (type == "single_numeric") {
+      question$min <- 1
+      question$max <- 5
+      question$options <- as.character(1:5)
+    }
+    question
+  }
+
   capture_question_editor_inputs <- function(groups) {
     for (group_id in names(groups)) {
       questions <- groups[[group_id]]$questions
       for (question_id in names(questions)) {
         question <- questions[[question_id]]
-        for (field in c("title", "desc", "type")) {
+        old_type <- question$type
+        selected_type <- input[[paste0("question_edit_type_", question_id)]]
+        type_changed <- !is.null(selected_type) && !identical(selected_type, old_type)
+        for (field in c("title", "desc")) {
           value <- input[[paste0("question_edit_", field, "_", question_id)]]
           if (!is.null(value)) question[[field]] <- value
         }
+        if (type_changed) question <- reset_question_type(question, selected_type)
 
-        if (question$type %in% c("single_text", "multiple")) {
+        if (!type_changed && question$type %in% c("single_text", "multiple")) {
           options <- input[[paste0("question_edit_options_", question_id)]]
           if (!is.null(options)) {
             options <- unique(trimws(as.character(options)))
             options <- options[nzchar(options)]
             question$options <- if (length(options)) options else NULL
           }
-        } else if (question$type != "single_numeric") question$options <- NULL
+        } else if (question$type != "single_numeric" || type_changed) question$options <- NULL
 
-        if (question$type %in% c("single_numeric", "numeric")) {
+        if (!type_changed && question$type %in% c("single_numeric", "numeric")) {
           for (field in c("min", "max")) {
             input_id <- if (question$type == "numeric") paste0("question_edit_numeric_", field, "_", question_id) else paste0("question_edit_", field, "_", question_id)
             value <- input[[input_id]]
             if (!is.null(value)) question[[field]] <- if (!length(value) || is.na(value)) NULL else suppressWarnings(as.numeric(value))
           }
-        } else question$min <- question$max <- NULL
+        } else if (!type_changed) question$min <- question$max <- NULL
 
         if (question$type == "single_numeric") {
           old_options <- suppressWarnings(as.numeric(question$options))
@@ -242,29 +316,31 @@ shinyServer(function(input, output, session) {
               question$min == floor(question$min) && question$max == floor(question$max)) question$options <- as.character(seq.int(question$min, question$max))
         }
 
-        setting_ids <- c(randomize_choices = "question_randomize_choices_", required = "question_required_",
-                         long_text = "question_long_text_")
-        for (field in names(setting_ids)) {
-          value <- input[[paste0(setting_ids[[field]], question_id)]]
-          if (!is.null(value)) {
-            if (is.null(question$settings)) question$settings <- list()
-            question$settings[[field]] <- if (field == "display") value else isTRUE(value)
+        if (!type_changed) {
+          setting_ids <- c(randomize_choices = "question_randomize_choices_", required = "question_required_",
+                           long_text = "question_long_text_")
+          for (field in names(setting_ids)) {
+            value <- input[[paste0(setting_ids[[field]], question_id)]]
+            if (!is.null(value)) {
+              if (is.null(question$settings)) question$settings <- list()
+              question$settings[[field]] <- isTRUE(value)
+            }
           }
-        }
-        display_id <- switch(question$type,
-          single_numeric = paste0("question_edit_display_", question_id, "_numeric"),
-          single_text = paste0("question_edit_display_", question_id, "_text"),
-          multiple = paste0("question_edit_display_", question_id, "_multiple"), NULL)
-        display <- if (is.null(display_id)) NULL else input[[display_id]]
-        if (!is.null(display)) {
-          if (is.null(question$settings)) question$settings <- list()
-          question$settings$display <- display
-        }
-        if (question$type == "single_numeric") for (field in c("min_label", "max_label")) {
-          value <- input[[paste0("question_", field, "_", question_id)]]
-          if (!is.null(value)) {
+          display_id <- switch(question$type,
+            single_numeric = paste0("question_edit_display_", question_id, "_numeric"),
+            single_text = paste0("question_edit_display_", question_id, "_text"),
+            multiple = paste0("question_edit_display_", question_id, "_multiple"), NULL)
+          display <- if (is.null(display_id)) NULL else input[[display_id]]
+          if (!is.null(display)) {
             if (is.null(question$settings)) question$settings <- list()
-            question$settings[[field]] <- value
+            question$settings$display <- display
+          }
+          if (question$type == "single_numeric") for (field in c("min_label", "max_label")) {
+            value <- input[[paste0("question_", field, "_", question_id)]]
+            if (!is.null(value)) {
+              if (is.null(question$settings)) question$settings <- list()
+              question$settings[[field]] <- value
+            }
           }
         }
         questions[[question_id]] <- question
@@ -274,6 +350,33 @@ shinyServer(function(input, output, session) {
     groups
   }
 
+  observe({
+    groups <- store$groups
+    changed <- FALSE
+    for (group_id in names(groups)) for (question_id in names(groups[[group_id]]$questions)) {
+      question <- groups[[group_id]]$questions[[question_id]]
+      type <- input[[paste0("question_edit_type_", question_id)]]
+      if (is.null(type) || identical(type, question$type)) next
+      for (field in c("title", "desc")) {
+        value <- input[[paste0("question_edit_", field, "_", question_id)]]
+        if (!is.null(value)) question[[field]] <- value
+      }
+      groups[[group_id]]$questions[[question_id]] <- reset_question_type(question, type)
+      changed <- TRUE
+      if (type == "single_numeric") {
+        updateNumericInput(session, paste0("question_edit_min_", question_id), value = 1)
+        updateNumericInput(session, paste0("question_edit_max_", question_id), value = 5)
+      } else {
+        updateNumericInput(session, paste0("question_edit_min_", question_id), value = NA_real_)
+        updateNumericInput(session, paste0("question_edit_max_", question_id), value = NA_real_)
+      }
+      updateNumericInput(session, paste0("question_edit_numeric_min_", question_id), value = NA_real_)
+      updateNumericInput(session, paste0("question_edit_numeric_max_", question_id), value = NA_real_)
+      updateSelectizeInput(session, paste0("question_edit_options_", question_id), choices = character(), selected = character())
+    }
+    if (changed) store$groups <- groups
+  })
+
   capture_questions <- function() {
     store$groups <- capture_question_editor_inputs(store$groups)
     store$groups
@@ -282,10 +385,10 @@ shinyServer(function(input, output, session) {
 
   # ---------- 既存アンケート読み込み ----------
   observeEvent(input$load_survey, {
-    req(nzchar(input$survey_id), nzchar(input$survey_pw))
+    req(!is.null(input$survey_id), nzchar(trimws(input$survey_id)), nzchar(input$survey_pw))
     
     db  <- load_db()
-    sid <- input$survey_id
+    sid <- trimws(input$survey_id)
     
     if (!(sid %in% names(db))) {
       showNotification("指定IDのアンケートは存在しません", type = "error")
@@ -313,9 +416,25 @@ shinyServer(function(input, output, session) {
     store$groups <- groups
     editing_question_options(names(qlist)[1])
     current_id(survey_info$id)
-    updateTextInput(session, "survey_id", value = survey_info$id)
-    updateTextInput(session, "survey_title", value = survey_info$title)
+    home_survey_id(survey_info$id)
+    survey_title_initial(survey_info$title)
+    editor_mode(TRUE)
     showNotification("アンケートを読み込みました", type = "message")
+  })
+
+  observeEvent(input$new_survey, {
+    store$groups <- list()
+    editing_question_options(NULL)
+    active_group_settings(NULL)
+    current_id(NULL)
+    home_survey_id("")
+    survey_title_initial("")
+    editor_mode(TRUE)
+  })
+
+  observeEvent(input$return_home, {
+    if (!is.null(current_id())) home_survey_id(current_id())
+    editor_mode(FALSE)
   })
 
   # ---------- 標準化プリセット追加 ----------
@@ -413,7 +532,7 @@ shinyServer(function(input, output, session) {
     capture_questions()
     if (action == "move") {
       req(length(parts) == 3)
-      store$groups <- store$groups[move_item(names(store$groups), group_id, parts[3])]
+      store$groups <- sanitize_group_visibility(store$groups[move_item(names(store$groups), group_id, parts[3])])
       return()
     }
     groups <- store$groups
@@ -602,12 +721,7 @@ shinyServer(function(input, output, session) {
       return()
     }
 
-    # 保存時はサーバー側の初期値ではなく、画面に入力されたIDを必ず使用する。
-    entered_survey_id <- trimws(if (is.null(input$survey_id)) "" else as.character(input$survey_id))
-    if (!nzchar(entered_survey_id)) {
-      showNotification("アンケートIDを入力してください", type = "error")
-      return()
-    }
+    entered_survey_id <- current_id()
 
     groups_to_save <- capture_questions()
     questions_to_save <- flatten_survey_groups(groups_to_save)
@@ -633,9 +747,10 @@ shinyServer(function(input, output, session) {
 
       store$groups <- remember_saved_ids(groups_to_save, id_map)
 
-      current_id(entered_survey_id)
-      updateTextInput(session, "survey_id", value = entered_survey_id)
-      showNotification(paste("保存しました（ID:", entered_survey_id, ")"), type = "message")
+      saved_id <- id_map$survey_id
+      current_id(saved_id)
+      home_survey_id(saved_id)
+      showNotification(paste("保存しました（ID:", saved_id, ")"), type = "message")
     }, error = function(e) {
       showNotification(paste("保存エラー:", e$message), type = "error")
     })
