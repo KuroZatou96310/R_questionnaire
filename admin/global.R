@@ -56,13 +56,6 @@ remember_saved_ids <- function(groups, id_map) {
   groups
 }
 
-next_group_title <- function(groups) {
-  titles <- vapply(groups, function(group) if (is.null(group$title)) "" else as.character(group$title), character(1))
-  suffixes <- regmatches(titles, regexpr("[0-9]+$", titles))
-  numbers <- suppressWarnings(as.integer(suffixes[nzchar(suffixes)]))
-  paste0("グループ", if (length(numbers)) max(numbers) + 1L else 1L)
-}
-
 question_options_ui <- function(question_id, question) {
   settings <- question$settings
   if (is.null(settings)) settings <- list()
@@ -246,7 +239,9 @@ question_group_board_ui <- function(groups, editing_question_options) {
     div(class = "group-card multi-question-group",
       `data-group-id` = group_id,
       div(class = "group-options-row",
-        strong(class = "group-title", group$title),
+        if (!is.null(group$title) && length(group$title) && !is.na(group$title[1]) && nzchar(trimws(as.character(group$title[1])))) {
+          strong(class = "group-title", group$title)
+        },
         div(class = "group-actions",
           board_action("group_action", paste("move", group_id, "up", sep = "|"), "↑", group_index == 1),
           board_action("group_action", paste("move", group_id, "down", sep = "|"), "↓", group_index == length(group_order)),

@@ -171,9 +171,11 @@ load_survey_items <- function(survey_id) with_db({
   for (i in seq_len(nrow(groups_rows))) {
     row <- groups_rows[i, ]
     settings <- tryCatch(fromJSON(row$settings_json, simplifyVector = FALSE), error = function(e) list())
-    if (is.null(settings$page) || identical(settings$page, "group")) settings$page <- FALSE
+    if (is.null(settings$page) || identical(settings$page, "group")) settings$page <- TRUE
     if (!is.null(settings$visibility$question_id)) settings$visibility$question_id <- as.character(settings$visibility$question_id)
-    groups[[as.character(row$group_id)]] <- list(id = as.character(row$group_id), title = enc2utf8(row$title), settings = settings, questions = list())
+    title <- enc2utf8(as.character(row$title))
+    if (is.na(title) || grepl("^(設問)?グループ[0-9]+$", title)) title <- ""
+    groups[[as.character(row$group_id)]] <- list(id = as.character(row$group_id), title = title, settings = settings, questions = list())
   }
   question_rows <- dbGetQuery(con, "SELECT * FROM questions WHERE survey_id = ? ORDER BY group_id, order_index", list(survey_id))
   for (i in seq_len(nrow(question_rows))) {
